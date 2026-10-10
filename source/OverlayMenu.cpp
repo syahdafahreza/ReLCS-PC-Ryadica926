@@ -356,6 +356,11 @@ namespace ReLCS
                         tag = CheatManager::IsNeverWantedEnabled() ? "[ACTIVE]" : "[OFF]";
                         tagColor = CheatManager::IsNeverWantedEnabled() ? 0xFF10B981 : 0xFF94A3B8;
                     }
+                    else if (item.id == LCSCheat::UnlimitedAmmo)
+                    {
+                        tag = CheatManager::IsUnlimitedAmmoEnabled() ? "[ACTIVE]" : "[OFF]";
+                        tagColor = CheatManager::IsUnlimitedAmmoEnabled() ? 0xFF10B981 : 0xFF94A3B8;
+                    }
                     else if (item.id == LCSCheat::UpsideDownMode)
                     {
                         tag = CheatManager::IsUpsideDownEnabled() ? "[ACTIVE]" : "";

@@ -5,6 +5,7 @@ namespace ReLCS
 {
     std::vector<CheatInfo> CheatManager::s_cheatList;
     std::atomic<bool> CheatManager::s_bNeverWanted(false);
+    std::atomic<bool> CheatManager::s_bUnlimitedAmmo(false);
     std::atomic<bool> CheatManager::s_bUpsideDown(false);
     std::string CheatManager::s_lastActivatedName = "";
     float CheatManager::s_notificationAlpha = 0.0f;
@@ -18,52 +19,53 @@ namespace ReLCS
     void CheatManager::Init()
     {
         s_cheatList = {
-            // Player Cheats (1-10)
-            { LCSCheat::FullHealth, "Full Health", "Player", "Restores player health to 100%", "ASPIRINE" },
-            { LCSCheat::FullArmor, "Full Armor", "Player", "Restores body armor to 100%", "PRECIOUSPROTECTION" },
-            { LCSCheat::HealthArmorMoney250K, "$250,000 + Health + Armor", "Player", "Gives $250k cash and full restoration", "ASPIRINE" },
-            { LCSCheat::WeaponSet1, "Weapon Set 1", "Player", "Knuckles, knife, Molotov, 9mm, shotgun, etc.", "THUGSTOOLS" },
-            { LCSCheat::WeaponSet2, "Weapon Set 2", "Player", "Katana, grenades, .357, Uzi, M4, launcher, etc.", "PROFESSIONALTOOLS" },
-            { LCSCheat::WeaponSet3, "Weapon Set 3", "Player", "Chainsaw, grenades, .357, spaz, MP5, minigun", "NUTTERTOOLS" },
-            { LCSCheat::ClearWantedLevel, "Clear Wanted Level", "Player", "Removes all wanted stars immediately", "LEAVEMEALONE" },
-            { LCSCheat::RaiseWantedLevel, "Raise Wanted Level (+2)", "Player", "Increases wanted level by 2 stars", "YOUWONTTAKEMEALIVE" },
-            { LCSCheat::NeverWanted, "Never Wanted [Toggle]", "Player", "Keeps wanted level permanently at zero", "LEAVEMEALONE" },
-            { LCSCheat::CommitSuicide, "Commit Suicide", "Player", "Instantly eliminates the player character", "ICANTTAKEITANYMORE" },
+            // Player Cheats
+            { LCSCheat::FullHealth, "Full Health", "Player", "Restores player health to 100%", "GRABEMPILLS" },
+            { LCSCheat::FullArmor, "Full Armor", "Player", "Restores body armor to 100%", "JUSTKEVLAR" },
+            { LCSCheat::HealthArmorMoney250K, "$250,000 + Health + Armor", "Player", "Gives $250k cash and full restoration", "NOTEVENRICH" },
+            { LCSCheat::WeaponSet1, "Weapon Set 1", "Player", "Brass knuckles, knife, Molotov, 9mm, shotgun, etc.", "TERRORIST" },
+            { LCSCheat::WeaponSet2, "Weapon Set 2", "Player", "Katana, grenades, .357, Uzi, M4, rocket launcher", "PALETO" },
+            { LCSCheat::WeaponSet3, "Weapon Set 3", "Player", "Chainsaw, grenades, laser sniper, spaz, minigun", "ICANCU" },
+            { LCSCheat::ClearWantedLevel, "Clear Wanted Level", "Player", "Removes all wanted stars immediately", "POLITICALIMUNITY" },
+            { LCSCheat::RaiseWantedLevel, "Raise Wanted Level (+2)", "Player", "Increases wanted level by 2 stars", "CROOKEDTONI" },
+            { LCSCheat::NeverWanted, "Never Wanted [Toggle]", "Player", "Keeps wanted level permanently at zero", "POLITICALIMUNITY" },
+            { LCSCheat::UnlimitedAmmo, "Unlimited Ammo [Toggle]", "Player", "Infinite ammo and no reload for all weapons", "" },
+            { LCSCheat::CommitSuicide, "Commit Suicide", "Player", "Instantly eliminates the player character", "KYSMATE" },
 
-            // Vehicle Cheats (11-19)
-            { LCSCheat::SpawnRhino, "Spawn Rhino Tank", "Vehicle", "Spawns a Rhino military tank near player", "PANZER" },
-            { LCSCheat::SpawnTrashmaster, "Spawn Trashmaster", "Vehicle", "Spawns a city garbage truck", "RUBBISHCAR" },
+            // Vehicle Cheats
+            { LCSCheat::SpawnRhino, "Spawn Rhino Tank", "Vehicle", "Spawns a Rhino military tank near player", "TOOLOFPEACE" },
+            { LCSCheat::SpawnTrashmaster, "Spawn Trashmaster", "Vehicle", "Spawns a city garbage truck", "UNTOUCHABLE" },
             { LCSCheat::SpawnDeaddodo, "Spawn Deaddodo", "Vehicle", "Spawns an airplane near player", "AIRSHIP" },
-            { LCSCheat::DestroyAllCars, "Blow Up All Cars", "Vehicle", "Detonates all vehicles in area", "BIGBANG" },
-            { LCSCheat::PerfectHandling, "Perfect Traction & Handling", "Vehicle", "Maximizes vehicle grip and cornering", "GRIPISEVERYTHING" },
-            { LCSCheat::AggressiveDrivers, "Aggressive Drivers", "Vehicle", "Drivers ram into other cars aggressively", "MIAMITRAFFIC" },
-            { LCSCheat::ChromeCars, "White / Chrome Cars", "Vehicle", "Repaints all city vehicles white/chrome", "AHAIRDRESSERSCAR" },
-            { LCSCheat::BlackCars, "Black Cars", "Vehicle", "Repaints all city vehicles black", "IWANTITPAINTEDBLACK" },
-            { LCSCheat::CarsDriveOnWater, "Cars Drive On Water", "Vehicle", "Vehicles float and drive across water", "SEAWAYS" },
+            { LCSCheat::DestroyAllCars, "Blow Up All Cars", "Vehicle", "Detonates all vehicles in area", "ALTRIGHT" },
+            { LCSCheat::PerfectHandling, "Perfect Traction & Handling", "Vehicle", "Maximizes vehicle grip and cornering", "BETTERBIKES" },
+            { LCSCheat::AggressiveDrivers, "Aggressive Drivers", "Vehicle", "Drivers ram into other cars aggressively", "MAXMAD" },
+            { LCSCheat::ChromeCars, "White / Chrome Cars", "Vehicle", "Repaints all city vehicles white/chrome", "SOUTHTRAFFIC" },
+            { LCSCheat::BlackCars, "Black Cars", "Vehicle", "Repaints all city vehicles black", "BCARSMATTER" },
+            { LCSCheat::CarsDriveOnWater, "Cars Drive On Water", "Vehicle", "Vehicles float and drive across water", "JESUSCAR" },
 
-            // World Cheats (20-31)
-            { LCSCheat::SunnyWeather, "Sunny Weather", "World", "Sets weather to clear sunshine", "ALOVELYDAY" },
-            { LCSCheat::ClearWeather, "Clear Weather", "World", "Sets weather to pleasant clear skies", "PLEASANTLYWARM" },
-            { LCSCheat::OvercastWeather, "Overcast Weather", "World", "Sets weather to overcast clouds", "ABITDRIEG" },
-            { LCSCheat::RainyWeather, "Rainy Weather", "World", "Sets weather to heavy rainfall", "CATSANDDOGS" },
-            { LCSCheat::FoggyWeather, "Foggy Weather", "World", "Sets weather to thick low-visibility fog", "CANTSEEATHING" },
+            // World Cheats
+            { LCSCheat::SunnyWeather, "Sunny Weather", "World", "Sets weather to clear sunshine", "DAYOFSUN" },
+            { LCSCheat::ClearWeather, "Clear Weather", "World", "Sets weather to pleasant clear skies", "IAMVAMPIRE" },
+            { LCSCheat::OvercastWeather, "Overcast Weather", "World", "Sets weather to overcast clouds", "CATSANDDOGS" },
+            { LCSCheat::RainyWeather, "Rainy Weather", "World", "Sets weather to heavy rainfall", "RAINDROPLETS" },
+            { LCSCheat::FoggyWeather, "Foggy Weather", "World", "Sets weather to thick low-visibility fog", "FOGGINWEATHER" },
             { LCSCheat::FasterClock, "Faster Clock", "World", "Accelerates clock and day/night speed", "LIFEISPASSINGMEBY" },
-            { LCSCheat::TrafficLightsGreen, "Green Traffic Lights", "World", "Turns all traffic lights green", "GREENLIGHT" },
-            { LCSCheat::TrafficLightsRed, "Red Traffic Lights", "World", "Turns all traffic lights red", "REDLIGHT" },
-            { LCSCheat::PedRiot, "Pedestrian Riot", "World", "Pedestrians riot and fight in streets", "FIGHTFIGHTFIGHT" },
-            { LCSCheat::PedAttackYou, "Pedestrians Attack You", "World", "All pedestrians become hostile to player", "NOBODYLIKESME" },
-            { LCSCheat::PedHaveWeapons, "Armed Pedestrians", "World", "Pedestrians carry dangerous firearms", "OURGODGIVENRIGHTTOBEARARMS" },
-            { LCSCheat::PedFollowYou, "Pedestrians Follow You", "World", "Nearby pedestrians follow the player", "FANNYMAGNET" },
+            { LCSCheat::TrafficLightsGreen, "Green Traffic Lights", "World", "Turns all traffic lights green", "SUNDAYDRIVE" },
+            { LCSCheat::TrafficLightsRed, "Red Traffic Lights", "World", "Turns all traffic lights red", "LUCKYDAY" },
+            { LCSCheat::PedRiot, "Pedestrian Riot", "World", "Pedestrians riot and fight in streets", "SMARTWORLD" },
+            { LCSCheat::PedAttackYou, "Pedestrians Attack You", "World", "All pedestrians become hostile to player", "ANOTHERFAF" },
+            { LCSCheat::PedHaveWeapons, "Armed Pedestrians", "World", "Pedestrians carry dangerous firearms", "NEXTPRESIDENT" },
+            { LCSCheat::PedFollowYou, "Pedestrians Follow You", "World", "Nearby pedestrians follow the player", "HOPINWEMAGA" },
 
-            // Visual & Gameplay Cheats (32-35)
-            { LCSCheat::SlowMotion, "Slow Motion", "Visual/Gameplay", "Slows game speed down", "BOOOOOORING" },
-            { LCSCheat::FastMotion, "Fast Motion", "Visual/Gameplay", "Speeds game motion up", "ONSPEED" },
+            // Visual & Gameplay Cheats
+            { LCSCheat::SlowMotion, "Slow Motion", "Visual/Gameplay", "Slows game speed down", "NOTTURBO" },
+            { LCSCheat::FastMotion, "Fast Motion", "Visual/Gameplay", "Speeds game motion up", "TURBOBUTTON" },
             { LCSCheat::UpsideDownMode, "Upside Down Screen", "Visual/Gameplay", "Flips viewport upside down", "" },
             { LCSCheat::NormalOrientationMode, "Normal Screen Orientation", "Visual/Gameplay", "Restores normal viewport orientation", "" }
         };
 
         FindGameOffsets();
-        CrashLogger::LogMessage("[CheatManager] Initialized with 35 LCS cheats.");
+        CrashLogger::LogMessage("[CheatManager] Initialized with 36 Re:LCS PC cheats.");
     }
 
     void CheatManager::FindGameOffsets()
@@ -142,7 +144,59 @@ namespace ReLCS
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 
-    static void SafeSetWantedLevel(uintptr_t pPlayerInfo, int level)
+    static void SafePatchUnlimitedAmmo(bool enable)
+    {
+        __try
+        {
+            uintptr_t addrs[] = { 0x5d4abe, 0x5d4af5, 0x5d4546, 0x5d457d };
+            uint8_t nopBytes[3] = { 0x90, 0x90, 0x90 };
+            uint8_t origBytes[4][3] = {
+                { 0xFF, 0x4E, 0x08 },
+                { 0xFF, 0x4E, 0x0C },
+                { 0xFF, 0x4E, 0x08 },
+                { 0xFF, 0x4E, 0x0C }
+            };
+
+            for (int i = 0; i < 4; i++)
+            {
+                DWORD oldProtect;
+                if (VirtualProtect(reinterpret_cast<void*>(addrs[i]), 3, PAGE_EXECUTE_READWRITE, &oldProtect))
+                {
+                    if (enable)
+                        memcpy(reinterpret_cast<void*>(addrs[i]), nopBytes, 3);
+                    else
+                        memcpy(reinterpret_cast<void*>(addrs[i]), origBytes[i], 3);
+
+                    VirtualProtect(reinterpret_cast<void*>(addrs[i]), 3, oldProtect, &oldProtect);
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeRefillPlayerAmmo(uintptr_t pPlayerInfo)
+    {
+        __try
+        {
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (pPed)
+            {
+                for (int slot = 0; slot < 10; slot++)
+                {
+                    uintptr_t pWeapon = pPed + 0x408 + (slot * 0x18);
+                    int weaponType = *reinterpret_cast<int*>(pWeapon);
+                    if (weaponType > 0)
+                    {
+                        *reinterpret_cast<int*>(pWeapon + 0x08) = 9999; // m_nAmmoInClip
+                        *reinterpret_cast<int*>(pWeapon + 0x0C) = 9999; // m_nAmmoTotal
+                    }
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeSetWantedLevel(uintptr_t pPlayerInfo, int level, bool freezeZero = false)
     {
         __try
         {
@@ -154,6 +208,18 @@ namespace ReLCS
                 {
                     *reinterpret_cast<int*>(pWanted + 0x00) = (level <= 0) ? 0 : (level * 150);
                     *reinterpret_cast<int*>(pWanted + 0x20) = level;
+                    *reinterpret_cast<int*>(pWanted + 0x24) = level;
+
+                    if (freezeZero)
+                    {
+                        *reinterpret_cast<bool*>(pWanted + 0x28) = true; // m_bIgnoredByPolice
+                        *reinterpret_cast<bool*>(pWanted + 0x29) = true; // m_bIgnoredByEveryone
+                    }
+                    else
+                    {
+                        *reinterpret_cast<bool*>(pWanted + 0x28) = false;
+                        *reinterpret_cast<bool*>(pWanted + 0x29) = false;
+                    }
                 }
             }
         }
@@ -211,18 +277,31 @@ namespace ReLCS
             s_bNeverWanted = !s_bNeverWanted;
             if (s_bNeverWanted)
             {
-                SimulateCheatCode("LEAVEMEALONE");
-                SafeSetWantedLevel(pPlayerInfo, 0);
+                SimulateCheatCode("POLITICALIMUNITY");
+                SafeSetWantedLevel(pPlayerInfo, 0, true);
+            }
+            else
+            {
+                SafeSetWantedLevel(pPlayerInfo, 0, false);
+            }
+            break;
+
+        case LCSCheat::UnlimitedAmmo:
+            s_bUnlimitedAmmo = !s_bUnlimitedAmmo;
+            SafePatchUnlimitedAmmo(s_bUnlimitedAmmo);
+            if (s_bUnlimitedAmmo)
+            {
+                SafeRefillPlayerAmmo(pPlayerInfo);
             }
             break;
 
         case LCSCheat::ClearWantedLevel:
-            SimulateCheatCode("LEAVEMEALONE");
-            SafeSetWantedLevel(pPlayerInfo, 0);
+            SimulateCheatCode("POLITICALIMUNITY");
+            SafeSetWantedLevel(pPlayerInfo, 0, false);
             break;
 
         case LCSCheat::RaiseWantedLevel:
-            SimulateCheatCode("YOUWONTTAKEMEALIVE");
+            SimulateCheatCode("CROOKEDTONI");
             SafeRaiseWantedLevel(pPlayerInfo, 2);
             break;
 
@@ -235,23 +314,22 @@ namespace ReLCS
             break;
 
         case LCSCheat::HealthArmorMoney250K:
-            SimulateCheatCode("ASPIRINE");
-            SimulateCheatCode("PRECIOUSPROTECTION");
+            SimulateCheatCode("NOTEVENRICH");
             SafeAddMoneyAndRestore(pPlayerInfo, 250000);
             break;
 
         case LCSCheat::FullHealth:
-            SimulateCheatCode("ASPIRINE");
+            SimulateCheatCode("GRABEMPILLS");
             SafeSetHealth(pPlayerInfo, 100.0f);
             break;
 
         case LCSCheat::FullArmor:
-            SimulateCheatCode("PRECIOUSPROTECTION");
+            SimulateCheatCode("JUSTKEVLAR");
             SafeSetArmour(pPlayerInfo, 100.0f);
             break;
 
         case LCSCheat::CommitSuicide:
-            SimulateCheatCode("ICANTTAKEITANYMORE");
+            SimulateCheatCode("KYSMATE");
             SafeSetHealth(pPlayerInfo, 0.0f);
             break;
 
@@ -288,7 +366,13 @@ namespace ReLCS
         // Maintain Never Wanted if toggled on
         if (s_bNeverWanted)
         {
-            SafeSetWantedLevel(0x94AD28, 0);
+            SafeSetWantedLevel(0x94AD28, 0, true);
+        }
+
+        // Maintain Unlimited Ammo if toggled on
+        if (s_bUnlimitedAmmo)
+        {
+            SafeRefillPlayerAmmo(0x94AD28);
         }
     }
 

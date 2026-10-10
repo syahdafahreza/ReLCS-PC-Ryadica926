@@ -16,6 +16,7 @@ namespace ReLCS
         ClearWantedLevel,
         RaiseWantedLevel,
         NeverWanted,
+        UnlimitedAmmo,
         CommitSuicide,
 
         // Vehicle Cheats (11-19)
@@ -72,6 +73,7 @@ namespace ReLCS
 
         // State toggles
         static bool IsNeverWantedEnabled() { return s_bNeverWanted; }
+        static bool IsUnlimitedAmmoEnabled() { return s_bUnlimitedAmmo; }
         static bool IsUpsideDownEnabled() { return s_bUpsideDown; }
         static const std::string& GetLastActivatedCheatName() { return s_lastActivatedName; }
         static float GetNotificationAlpha() { return s_notificationAlpha; }
@@ -82,6 +84,7 @@ namespace ReLCS
 
         static std::vector<CheatInfo> s_cheatList;
         static std::atomic<bool> s_bNeverWanted;
+        static std::atomic<bool> s_bUnlimitedAmmo;
         static std::atomic<bool> s_bUpsideDown;
         static std::string s_lastActivatedName;
         static float s_notificationAlpha;
