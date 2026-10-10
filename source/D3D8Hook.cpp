@@ -10,24 +10,17 @@ namespace ReLCS
     void** D3D8Hook::s_pVTable = nullptr;
     std::atomic<bool> D3D8Hook::s_bHooked(false);
 
-    void D3D8Hook::Init()
-    {
-        CreateThread(nullptr, 0, HookThread, nullptr, 0, nullptr);
-    }
+    typedef void* (*RwD3D9GetCurrentD3DDevice_t)(void);
 
-    void D3D8Hook::Uninstall()
+    static void* SafeGetD3DDevice(RwD3D9GetCurrentD3DDevice_t pfn)
     {
-        if (s_bHooked && s_pVTable)
+        __try
         {
-            DWORD oldProtect;
-            if (VirtualProtect(&s_pVTable[16], sizeof(void*) * 30, PAGE_EXECUTE_READWRITE, &oldProtect))
-            {
-                if (s_origReset) s_pVTable[16] = reinterpret_cast<void*>(s_origReset);
-                if (s_origPresent) s_pVTable[17] = reinterpret_cast<void*>(s_origPresent);
-                if (s_origEndScene) s_pVTable[42] = reinterpret_cast<void*>(s_origEndScene);
-                VirtualProtect(&s_pVTable[16], sizeof(void*) * 30, oldProtect, &oldProtect);
-            }
-            s_bHooked = false;
+            return pfn();
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return nullptr;
         }
     }
 
@@ -40,6 +33,78 @@ namespace ReLCS
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             // Fail safely to prevent overlay rendering crash from killing the game
+        }
+    }
+
+    static HWND FindGameWindow()
+    {
+        DWORD currentPid = GetCurrentProcessId();
+
+        // 1. Try common GTA window classes
+        const char* classes[] = { "Grand theft auto 3", "Grand Theft Auto", nullptr };
+        for (int i = 0; classes[i] != nullptr; i++)
+        {
+            HWND hWnd = FindWindowA(classes[i], nullptr);
+            if (hWnd && IsWindowVisible(hWnd))
+            {
+                DWORD pid = 0;
+                GetWindowThreadProcessId(hWnd, &pid);
+                if (pid == currentPid)
+                    return hWnd;
+            }
+        }
+
+        // 2. Try window title
+        HWND hWndTitle = FindWindowA(nullptr, "GTA: Liberty City Stories");
+        if (hWndTitle && IsWindowVisible(hWndTitle))
+        {
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hWndTitle, &pid);
+            if (pid == currentPid)
+                return hWndTitle;
+        }
+
+        // 3. Enumerate top-level windows of current process
+        struct EnumData { DWORD pid; HWND found; };
+        EnumData ed = { currentPid, nullptr };
+        EnumWindows([](HWND h, LPARAM lp) -> BOOL {
+            EnumData* pEd = reinterpret_cast<EnumData*>(lp);
+            DWORD p = 0;
+            GetWindowThreadProcessId(h, &p);
+            if (p == pEd->pid && IsWindowVisible(h))
+            {
+                char title[128] = { 0 };
+                GetWindowTextA(h, title, sizeof(title));
+                if (strlen(title) > 0)
+                {
+                    pEd->found = h;
+                    return FALSE;
+                }
+            }
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&ed));
+
+        return ed.found;
+    }
+
+    void D3D8Hook::Init()
+    {
+        CreateThread(nullptr, 0, HookThread, nullptr, 0, nullptr);
+    }
+
+    void D3D8Hook::Uninstall()
+    {
+        if (s_bHooked && s_pVTable)
+        {
+            DWORD oldProtect;
+            if (VirtualProtect(&s_pVTable[0], sizeof(void*) * 60, PAGE_EXECUTE_READWRITE, &oldProtect))
+            {
+                if (s_origReset) s_pVTable[16] = reinterpret_cast<void*>(s_origReset);
+                if (s_origPresent) s_pVTable[17] = reinterpret_cast<void*>(s_origPresent);
+                if (s_origEndScene) s_pVTable[42] = reinterpret_cast<void*>(s_origEndScene);
+                VirtualProtect(&s_pVTable[0], sizeof(void*) * 60, oldProtect, &oldProtect);
+            }
+            s_bHooked = false;
         }
     }
 
@@ -85,108 +150,85 @@ namespace ReLCS
 
     DWORD WINAPI D3D8Hook::HookThread(LPVOID lpParam)
     {
-        CrashLogger::LogMessage("[D3DHook] Hook thread started. Waiting for RenderWare Direct3D 9 device...");
+        CrashLogger::LogMessage("[D3DHook] Hook thread started. Waiting for game window creation...");
 
-        // 1. Wait for rwd3d9.dll
+        // 1. Wait for game window to be created and visible (up to 30 seconds)
+        HWND hGameWnd = nullptr;
+        for (int i = 0; i < 150 && !hGameWnd; i++)
+        {
+            hGameWnd = FindGameWindow();
+            if (!hGameWnd)
+                Sleep(200);
+        }
+
+        if (!hGameWnd)
+        {
+            CrashLogger::LogMessage("[D3DHook] Game window not detected yet, will continue waiting in background...");
+        }
+        else
+        {
+            CrashLogger::LogMessage("[D3DHook] Game window detected! Waiting 2 seconds for RenderWare 3D device to finish setup...");
+            Sleep(2000);
+        }
+
+        // 2. Query RenderWare Direct3D 9 device safely
         HMODULE hRw = nullptr;
-        for (int i = 0; i < 60 && !hRw; i++)
+        for (int i = 0; i < 100 && !hRw; i++)
         {
             hRw = GetModuleHandleA("rwd3d9.dll");
             if (!hRw)
-                Sleep(100);
+                Sleep(200);
         }
 
         IDirect3DDevice9* pDevice = nullptr;
 
         if (hRw)
         {
-            CrashLogger::LogMessage("[D3DHook] Found rwd3d9.dll. Querying RwD3D9GetCurrentD3DDevice...");
-            typedef void* (*RwD3D9GetCurrentD3DDevice_t)(void);
             RwD3D9GetCurrentD3DDevice_t pfnGetDevice =
                 reinterpret_cast<RwD3D9GetCurrentD3DDevice_t>(GetProcAddress(hRw, "RwD3D9GetCurrentD3DDevice"));
 
             if (pfnGetDevice)
             {
-                // Wait for game to initialize the device
+                CrashLogger::LogMessage("[D3DHook] Found RwD3D9GetCurrentD3DDevice export. Polling device safely...");
                 for (int i = 0; i < 150 && !pDevice; i++)
                 {
-                    pDevice = reinterpret_cast<IDirect3DDevice9*>(pfnGetDevice());
+                    pDevice = reinterpret_cast<IDirect3DDevice9*>(SafeGetD3DDevice(pfnGetDevice));
                     if (!pDevice)
-                        Sleep(100);
-                }
-            }
-        }
-
-        // 2. Fallback to d3d9.dll if rwd3d9 wasn't present
-        if (!pDevice)
-        {
-            CrashLogger::LogMessage("[D3DHook] Waiting for d3d9.dll in process...");
-            HMODULE hD3D9 = nullptr;
-            for (int i = 0; i < 50 && !hD3D9; i++)
-            {
-                hD3D9 = GetModuleHandleA("d3d9.dll");
-                if (!hD3D9)
-                    Sleep(200);
-            }
-
-            if (hD3D9)
-            {
-                typedef IDirect3D9* (WINAPI* Direct3DCreate9_t)(UINT);
-                Direct3DCreate9_t pDirect3DCreate9 = reinterpret_cast<Direct3DCreate9_t>(GetProcAddress(hD3D9, "Direct3DCreate9"));
-                if (pDirect3DCreate9)
-                {
-                    IDirect3D9* pD3D = pDirect3DCreate9(D3D_SDK_VERSION);
-                    if (pD3D)
-                    {
-                        HWND hDesktop = GetDesktopWindow();
-                        D3DDISPLAYMODE d3ddm;
-                        pD3D->GetAdapterDisplayMode(D3DADAPTER_DEFAULT, &d3ddm);
-                        D3DPRESENT_PARAMETERS d3dpp = { 0 };
-                        d3dpp.Windowed = TRUE;
-                        d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-                        d3dpp.BackBufferFormat = d3ddm.Format;
-                        d3dpp.hDeviceWindow = hDesktop;
-
-                        IDirect3DDevice9* pDummyDevice = nullptr;
-                        if (SUCCEEDED(pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_NULLREF, hDesktop,
-                            D3DCREATE_SOFTWARE_VERTEXPROCESSING, &d3dpp, &pDummyDevice)) && pDummyDevice)
-                        {
-                            pDevice = pDummyDevice;
-                        }
-                        pD3D->Release();
-                    }
+                        Sleep(200);
                 }
             }
         }
 
         if (!pDevice)
         {
-            CrashLogger::LogMessage("[D3DHook] Could not acquire IDirect3DDevice9.");
+            CrashLogger::LogMessage("[D3DHook] Could not acquire IDirect3DDevice9 from rwd3d9.dll.");
             return 0;
         }
+
+        CrashLogger::LogMessage("[D3DHook] Successfully acquired active IDirect3DDevice9! Patching vtable...");
 
         // Hook vtable
         s_pVTable = *reinterpret_cast<void***>(pDevice);
         if (s_pVTable)
         {
-            s_origReset = reinterpret_cast<Reset9_t>(s_pVTable[16]);
-            s_origPresent = reinterpret_cast<Present9_t>(s_pVTable[17]);
-            s_origEndScene = reinterpret_cast<EndScene9_t>(s_pVTable[42]);
-
             DWORD oldProtect;
-            if (VirtualProtect(&s_pVTable[16], sizeof(void*) * 30, PAGE_EXECUTE_READWRITE, &oldProtect))
+            if (VirtualProtect(&s_pVTable[0], sizeof(void*) * 60, PAGE_EXECUTE_READWRITE, &oldProtect))
             {
+                s_origReset = reinterpret_cast<Reset9_t>(s_pVTable[16]);
+                s_origPresent = reinterpret_cast<Present9_t>(s_pVTable[17]);
+                s_origEndScene = reinterpret_cast<EndScene9_t>(s_pVTable[42]);
+
                 s_pVTable[16] = reinterpret_cast<void*>(Hooked_Reset);
                 s_pVTable[17] = reinterpret_cast<void*>(Hooked_Present);
                 s_pVTable[42] = reinterpret_cast<void*>(Hooked_EndScene);
-                VirtualProtect(&s_pVTable[16], sizeof(void*) * 30, oldProtect, &oldProtect);
+                VirtualProtect(&s_pVTable[0], sizeof(void*) * 60, oldProtect, &oldProtect);
 
                 s_bHooked = true;
-                CrashLogger::LogMessage("[D3DHook] Successfully hooked IDirect3DDevice9 EndScene (index 42), Reset (index 16), Present (index 17).");
+                CrashLogger::LogMessage("[D3DHook] SUCCESS: Hooked IDirect3DDevice9 EndScene (index 42), Reset (index 16), Present (index 17). Ready for F9!");
             }
             else
             {
-                CrashLogger::LogMessage("[D3DHook] VirtualProtect failed on vtable entries.");
+                CrashLogger::LogMessage("[D3DHook] VirtualProtect failed on vtable.");
             }
         }
 
