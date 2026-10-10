@@ -184,14 +184,23 @@ namespace ReLCS
         LogMessage(report);
         WriteMiniDump(pExceptionPointers, s_dumpFilePath);
 
+        auto WStringToAString = [](const std::wstring& wstr) -> std::string {
+            if (wstr.empty()) return "";
+            int len = WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            if (len <= 1) return "";
+            std::string str(len - 1, '\0');
+            WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), -1, &str[0], len, nullptr, nullptr);
+            return str;
+        };
+
         std::string msg = "GTA Re:LCS has encountered a fatal error.\n\n"
                           "Exception: " + desc + "\n"
                           "Address: 0x" + std::to_string(reinterpret_cast<uintptr_t>(rec->ExceptionAddress)) +
                           " (" + modName + ")\n\n"
                           "A detailed log was written to:\n" +
-                          std::filesystem::path(s_logFilePath).string() + "\n"
+                          WStringToAString(s_logFilePath) + "\n"
                           "Crash dump was written to:\n" +
-                          std::filesystem::path(s_dumpFilePath).string();
+                          WStringToAString(s_dumpFilePath);
 
         MessageBoxA(nullptr, msg.c_str(), "ReLCS-Cleo Crash Intercepted", MB_ICONERROR | MB_OK);
 
