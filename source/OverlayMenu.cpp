@@ -23,6 +23,27 @@ namespace ReLCS
         s_lastFpsTime = std::chrono::steady_clock::now();
     }
 
+    std::vector<CheatInfo> OverlayMenu::GetCheatsForCategory(int categoryIndex)
+    {
+        std::vector<CheatInfo> result;
+        const char* targetCat = "";
+        switch (categoryIndex)
+        {
+        case 0: targetCat = "Player"; break;
+        case 1: targetCat = "Vehicle"; break;
+        case 2: targetCat = "World"; break;
+        case 3: targetCat = "Visual/Gameplay"; break;
+        default: break;
+        }
+
+        for (const auto& cheat : CheatManager::GetCheats())
+        {
+            if (cheat.category == targetCat)
+                result.push_back(cheat);
+        }
+        return result;
+    }
+
     void OverlayMenu::CreateFontTexture(IDirect3DDevice9* pDevice)
     {
         if (s_pFontTexture || !pDevice)
@@ -48,7 +69,7 @@ namespace ReLCS
             }
         }
 
-        // Draw 96 glyphs
+        // Draw 96 glyphs with MSB (left pixel) to LSB (right pixel)
         for (int i = 0; i < 96; i++)
         {
             int col = i % 16;
@@ -61,7 +82,8 @@ namespace ReLCS
                 uint8_t byteRow = g_font8x8_basic[i][py];
                 for (int px = 0; px < 8; px++)
                 {
-                    if ((byteRow >> px) & 1)
+                    // Bit 7 is leftmost pixel (px = 0), Bit 0 is rightmost pixel (px = 7)
+                    if ((byteRow >> (7 - px)) & 1)
                     {
                         pBits[(startY + py) * pitchElements + (startX + px)] = 0xFFFFFFFF;
                     }
@@ -86,79 +108,39 @@ namespace ReLCS
         CreateFontTexture(pDevice);
     }
 
-    void OverlayMenu::HandleInput()
+    void OverlayMenu::OnMenuKeyDown(WPARAM vk)
     {
-        static bool lastF9 = false;
-        static bool lastF10 = false;
-        static bool lastUp = false;
-        static bool lastDown = false;
-        static bool lastLeft = false;
-        static bool lastRight = false;
-        static bool lastEnter = false;
-        static bool lastEsc = false;
-
-        bool currF9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
-        bool currF10 = (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
-
-        if (currF9 && !lastF9)
-            s_bVisible = !s_bVisible;
-
-        if (currF10 && !lastF10)
-            s_bShowFps = !s_bShowFps;
-
-        lastF9 = currF9;
-        lastF10 = currF10;
-
         if (!s_bVisible)
             return;
 
-        bool currUp = (GetAsyncKeyState(VK_UP) & 0x8000) != 0;
-        bool currDown = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0;
-        bool currLeft = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
-        bool currRight = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
-        bool currEnter = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-        bool currEsc = ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) || (GetAsyncKeyState(VK_BACK) & 0x8000));
-
-        // Get cheats for current category
-        std::vector<CheatInfo> currentCategoryCheats;
-        std::string currentCatName = s_categories[s_activeCategory];
-        for (const auto& cheat : CheatManager::GetCheats())
-        {
-            if (currentCatName == "VISUAL/GAME" && cheat.category == "Visual/Gameplay")
-                currentCategoryCheats.push_back(cheat);
-            else if (cheat.category == currentCatName)
-                currentCategoryCheats.push_back(cheat);
-        }
-
+        std::vector<CheatInfo> currentCategoryCheats = GetCheatsForCategory(s_activeCategory);
         int totalItems = static_cast<int>(currentCategoryCheats.size());
-        if (s_activeCategory == 3) // Add FPS counter toggle as extra item in Visual/Game
-            totalItems += 1;
+        if (s_activeCategory == 3)
+            totalItems += 1; // FPS counter toggle
 
-        if (currLeft && !lastLeft)
+        if (vk == VK_LEFT)
         {
             s_activeCategory = (s_activeCategory - 1 + 4) % 4;
             s_selectedIndex = 0;
         }
-        else if (currRight && !lastRight)
+        else if (vk == VK_RIGHT)
         {
             s_activeCategory = (s_activeCategory + 1) % 4;
             s_selectedIndex = 0;
         }
-
-        if (currUp && !lastUp)
+        else if (vk == VK_UP)
         {
             s_selectedIndex--;
             if (s_selectedIndex < 0)
-                s_selectedIndex = totalItems - 1;
+                s_selectedIndex = (totalItems > 0 ? totalItems - 1 : 0);
         }
-        else if (currDown && !lastDown)
+        else if (vk == VK_DOWN)
         {
             s_selectedIndex++;
             if (s_selectedIndex >= totalItems)
                 s_selectedIndex = 0;
         }
-
-        if (currEnter && !lastEnter)
+        else if (vk == VK_RETURN)
         {
             if (s_activeCategory == 3 && s_selectedIndex == totalItems - 1)
             {
@@ -169,18 +151,6 @@ namespace ReLCS
                 CheatManager::ActivateCheat(currentCategoryCheats[s_selectedIndex].id);
             }
         }
-
-        if (currEsc && !lastEsc)
-        {
-            s_bVisible = false;
-        }
-
-        lastUp = currUp;
-        lastDown = currDown;
-        lastLeft = currLeft;
-        lastRight = currRight;
-        lastEnter = currEnter;
-        lastEsc = currEsc;
     }
 
     void OverlayMenu::DrawRect(IDirect3DDevice9* pDevice, float x, float y, float w, float h, DWORD color)
@@ -265,7 +235,6 @@ namespace ReLCS
             return;
 
         UpdateFps();
-        HandleInput();
         CheatManager::Update();
 
         // Capture full state block to preserve all RenderStates and Shaders
@@ -347,20 +316,12 @@ namespace ReLCS
                 DrawTextString(pDevice, tX + 8.0f, tabY + 7.0f, s_categories[i], tabTextColor, 1.0f);
             }
 
-            // Items list
-            std::vector<CheatInfo> curCheats;
-            std::string curCat = s_categories[s_activeCategory];
-            for (const auto& c : CheatManager::GetCheats())
-            {
-                if (curCat == "VISUAL/GAME" && c.category == "Visual/Gameplay")
-                    curCheats.push_back(c);
-                else if (c.category == curCat)
-                    curCheats.push_back(c);
-            }
+            // Items list for currently active category
+            std::vector<CheatInfo> curCheats = GetCheatsForCategory(s_activeCategory);
 
             int totalRows = static_cast<int>(curCheats.size());
             if (s_activeCategory == 3)
-                totalRows += 1;
+                totalRows += 1; // FPS counter item
 
             float itemStartY = tabY + 34.0f;
             float rowH = 26.0f;
@@ -417,7 +378,7 @@ namespace ReLCS
             float footerY = menuY + menuH - 30.0f;
             DrawRect(pDevice, menuX, footerY, menuW, 30.0f, 0xFF0F172A);
             DrawTextString(pDevice, menuX + 16.0f, footerY + 8.0f,
-                "[UP/DN] Navigate  [LEFT/RT] Tab  [ENTER] Apply  [ESC] Close", 0xFF94A3B8, 1.05f);
+                "[UP/DN] Navigate  [LEFT/RT] Tab  [ENTER] Apply  [F9] Close", 0xFF94A3B8, 1.05f);
         }
 
         // Apply and release state block to restore original game graphics pipeline

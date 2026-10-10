@@ -10,6 +10,9 @@ namespace ReLCS
     void** D3D8Hook::s_pVTable = nullptr;
     std::atomic<bool> D3D8Hook::s_bHooked(false);
 
+    static WNDPROC s_pOriginalWndProc = nullptr;
+    static HWND s_hHookedWnd = nullptr;
+
     typedef void* (*RwD3D9GetCurrentD3DDevice_t)(void);
 
     static void* SafeGetD3DDevice(RwD3D9GetCurrentD3DDevice_t pfn)
@@ -34,6 +37,53 @@ namespace ReLCS
         {
             // Fail safely to prevent overlay rendering crash from killing the game
         }
+    }
+
+    static LRESULT CALLBACK GameWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+    {
+        if (uMsg == WM_KEYDOWN)
+        {
+            if (wParam == VK_F9)
+            {
+                OverlayMenu::ToggleVisibility();
+                return 0; // Consume F9
+            }
+            if (wParam == VK_F10)
+            {
+                OverlayMenu::ToggleFpsCounter();
+                return 0; // Consume F10
+            }
+
+            if (OverlayMenu::IsVisible())
+            {
+                // Navigate menu
+                if (wParam == VK_UP || wParam == VK_DOWN || wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_RETURN)
+                {
+                    OverlayMenu::OnMenuKeyDown(wParam);
+                }
+                // Swallow all keystrokes while menu is open so player doesn't move or trigger game pause
+                return 0;
+            }
+        }
+        else if (uMsg == WM_KEYUP || uMsg == WM_CHAR)
+        {
+            if (OverlayMenu::IsVisible())
+            {
+                return 0; // Swallow while menu is open
+            }
+        }
+        else if (uMsg == WM_LBUTTONDOWN || uMsg == WM_RBUTTONDOWN || uMsg == WM_MBUTTONDOWN)
+        {
+            if (OverlayMenu::IsVisible())
+            {
+                return 0; // Swallow mouse clicks while menu is open
+            }
+        }
+
+        if (s_pOriginalWndProc)
+            return CallWindowProcA(s_pOriginalWndProc, hWnd, uMsg, wParam, lParam);
+
+        return DefWindowProcA(hWnd, uMsg, wParam, lParam);
     }
 
     static HWND FindGameWindow()
@@ -94,6 +144,12 @@ namespace ReLCS
 
     void D3D8Hook::Uninstall()
     {
+        if (s_hHookedWnd && s_pOriginalWndProc)
+        {
+            SetWindowLongPtrA(s_hHookedWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(s_pOriginalWndProc));
+            s_pOriginalWndProc = nullptr;
+        }
+
         if (s_bHooked && s_pVTable)
         {
             DWORD oldProtect;
@@ -167,7 +223,13 @@ namespace ReLCS
         }
         else
         {
-            CrashLogger::LogMessage("[D3DHook] Game window detected! Waiting 2 seconds for RenderWare 3D device to finish setup...");
+            CrashLogger::LogMessage("[D3DHook] Game window detected! Installing input blocker and waiting for 3D device...");
+            if (!s_pOriginalWndProc)
+            {
+                s_hHookedWnd = hGameWnd;
+                s_pOriginalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(hGameWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(GameWindowProc)));
+                CrashLogger::LogMessage("[D3DHook] Hooked Game WindowProc successfully. Input isolation enabled!");
+            }
             Sleep(2000);
         }
 

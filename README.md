@@ -82,12 +82,12 @@ Game Re:LCS menggunakan `gta-lcs.exe` modifikasi buatan Ryadica926 yang tata let
 
 | Tombol | Fungsi |
 | :--- | :--- |
-| **`F9`** | Buka / Tutup Menu Cheat |
+| **`F9`** | Buka & Tutup Menu Cheat |
 | **`F10`** | Toggle FPS Counter |
 | **`Panah Atas / Bawah`** | Navigasi & Memilih Cheat |
 | **`Panah Kiri / Kanan`** | Ganti Kategori (Player / Vehicle / World / Visual) |
 | **`Enter`** | Aktifkan Cheat Terpilih |
-| **`Esc` / `Backspace`** | Tutup Menu |
+| **`F9`** | Tutup Menu (ESC diisolasi agar tidak bentrok dengan pause menu) |
 
 ---
 

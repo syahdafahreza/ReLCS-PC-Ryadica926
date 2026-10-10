@@ -18,7 +18,7 @@ namespace ReLCS
     {
     public:
         static void Init();
-        static void HandleInput();
+        static void OnMenuKeyDown(WPARAM vk);
         static void Render(IDirect3DDevice9* pDevice);
         static void OnLostDevice();
         static void OnResetDevice(IDirect3DDevice9* pDevice);
@@ -28,6 +28,8 @@ namespace ReLCS
 
         static bool IsFpsCounterEnabled() { return s_bShowFps; }
         static void ToggleFpsCounter() { s_bShowFps = !s_bShowFps; }
+
+        static std::vector<CheatInfo> GetCheatsForCategory(int categoryIndex);
 
     private:
         static void CreateFontTexture(IDirect3DDevice9* pDevice);
