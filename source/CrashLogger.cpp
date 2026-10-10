@@ -189,9 +189,9 @@ namespace ReLCS
                           "Address: 0x" + std::to_string(reinterpret_cast<uintptr_t>(rec->ExceptionAddress)) +
                           " (" + modName + ")\n\n"
                           "A detailed log was written to:\n" +
-                          std::string(s_logFilePath.begin(), s_logFilePath.end()) + "\n"
+                          std::filesystem::path(s_logFilePath).string() + "\n"
                           "Crash dump was written to:\n" +
-                          std::string(s_dumpFilePath.begin(), s_dumpFilePath.end());
+                          std::filesystem::path(s_dumpFilePath).string();
 
         MessageBoxA(nullptr, msg.c_str(), "ReLCS-Cleo Crash Intercepted", MB_ICONERROR | MB_OK);
 

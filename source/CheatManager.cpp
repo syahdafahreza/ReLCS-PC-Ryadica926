@@ -78,27 +78,122 @@ namespace ReLCS
             s_hGameWnd = GetActiveWindow();
     }
 
+    static void SafeCallAddCheat(void* pPad, char c)
+    {
+        typedef void(__thiscall* AddToPCCheatString_t)(void*, char);
+        AddToPCCheatString_t pfnAddCheat = reinterpret_cast<AddToPCCheatString_t>(0x4ABD20);
+        __try
+        {
+            pfnAddCheat(pPad, c);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeAddMoneyAndRestore(uintptr_t pPlayerInfo, int amount)
+    {
+        __try
+        {
+            HMODULE hReLCS = GetModuleHandleA("ReLCS.dll");
+            if (hReLCS)
+            {
+                typedef void (*ReLCSCheatFn_t)();
+                ReLCSCheatFn_t pfnMoneyCheat = reinterpret_cast<ReLCSCheatFn_t>(reinterpret_cast<uintptr_t>(hReLCS) + 0x25af0);
+                pfnMoneyCheat();
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+
+        __try
+        {
+            int* pMoney = reinterpret_cast<int*>(pPlayerInfo + 0xA0);
+            int* pDisplayMoney = reinterpret_cast<int*>(pPlayerInfo + 0xA4);
+            *pMoney += amount;
+            *pDisplayMoney += amount;
+
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (pPed)
+            {
+                *reinterpret_cast<float*>(pPed + 0x354) = 100.0f; // Health
+                *reinterpret_cast<float*>(pPed + 0x358) = 100.0f; // Armour
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeSetHealth(uintptr_t pPlayerInfo, float health)
+    {
+        __try
+        {
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (pPed)
+                *reinterpret_cast<float*>(pPed + 0x354) = health;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeSetArmour(uintptr_t pPlayerInfo, float armour)
+    {
+        __try
+        {
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (pPed)
+                *reinterpret_cast<float*>(pPed + 0x358) = armour;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeSetWantedLevel(uintptr_t pPlayerInfo, int level)
+    {
+        __try
+        {
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (pPed)
+            {
+                uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
+                if (pWanted)
+                {
+                    *reinterpret_cast<int*>(pWanted + 0x00) = (level <= 0) ? 0 : (level * 150);
+                    *reinterpret_cast<int*>(pWanted + 0x20) = level;
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeRaiseWantedLevel(uintptr_t pPlayerInfo, int addLevels)
+    {
+        __try
+        {
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (pPed)
+            {
+                uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
+                if (pWanted)
+                {
+                    int cur = *reinterpret_cast<int*>(pWanted + 0x20);
+                    if (cur < 6)
+                    {
+                        cur += addLevels;
+                        if (cur > 6) cur = 6;
+                        *reinterpret_cast<int*>(pWanted + 0x20) = cur;
+                        *reinterpret_cast<int*>(pWanted + 0x00) = cur * 150;
+                    }
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
     void CheatManager::SimulateCheatCode(const std::string& code)
     {
         if (code.empty())
             return;
 
-        // Directly call the game's native CPad::AddToPCCheatString at 0x4ABD20 with CPad::Pads[0] at 0x7DBCB0
-        typedef void(__thiscall* AddToPCCheatString_t)(void* pPad, char c);
-        AddToPCCheatString_t pfnAddCheat = reinterpret_cast<AddToPCCheatString_t>(0x4ABD20);
         void* pPad = reinterpret_cast<void*>(0x7DBCB0);
-
         for (char c : code)
         {
             char upperChar = static_cast<char>(toupper(static_cast<unsigned char>(c)));
-            __try
-            {
-                pfnAddCheat(pPad, upperChar);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                break;
-            }
+            SafeCallAddCheat(pPad, upperChar);
         }
     }
 
@@ -108,7 +203,7 @@ namespace ReLCS
         if (!info)
             return false;
 
-        uintptr_t pPlayerInfo = 0x94AD28;
+        const uintptr_t pPlayerInfo = 0x94AD28;
 
         switch (cheat)
         {
@@ -117,63 +212,18 @@ namespace ReLCS
             if (s_bNeverWanted)
             {
                 SimulateCheatCode("LEAVEMEALONE");
-                __try
-                {
-                    uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-                    if (pPed)
-                    {
-                        uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
-                        if (pWanted)
-                        {
-                            *reinterpret_cast<int*>(pWanted + 0x00) = 0;
-                            *reinterpret_cast<int*>(pWanted + 0x20) = 0;
-                        }
-                    }
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER) {}
+                SafeSetWantedLevel(pPlayerInfo, 0);
             }
             break;
 
         case LCSCheat::ClearWantedLevel:
             SimulateCheatCode("LEAVEMEALONE");
-            __try
-            {
-                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-                if (pPed)
-                {
-                    uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
-                    if (pWanted)
-                    {
-                        *reinterpret_cast<int*>(pWanted + 0x00) = 0;
-                        *reinterpret_cast<int*>(pWanted + 0x20) = 0;
-                    }
-                }
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            SafeSetWantedLevel(pPlayerInfo, 0);
             break;
 
         case LCSCheat::RaiseWantedLevel:
             SimulateCheatCode("YOUWONTTAKEMEALIVE");
-            __try
-            {
-                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-                if (pPed)
-                {
-                    uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
-                    if (pWanted)
-                    {
-                        int cur = *reinterpret_cast<int*>(pWanted + 0x20);
-                        if (cur < 6)
-                        {
-                            cur += 2;
-                            if (cur > 6) cur = 6;
-                            *reinterpret_cast<int*>(pWanted + 0x20) = cur;
-                            *reinterpret_cast<int*>(pWanted + 0x00) = cur * 150;
-                        }
-                    }
-                }
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            SafeRaiseWantedLevel(pPlayerInfo, 2);
             break;
 
         case LCSCheat::UpsideDownMode:
@@ -185,70 +235,24 @@ namespace ReLCS
             break;
 
         case LCSCheat::HealthArmorMoney250K:
-            // Native cheats
             SimulateCheatCode("ASPIRINE");
             SimulateCheatCode("PRECIOUSPROTECTION");
-
-            // If ReLCS.dll is loaded, call its native $250k cheat function
-            {
-                HMODULE hReLCS = GetModuleHandleA("ReLCS.dll");
-                if (hReLCS)
-                {
-                    typedef void (*ReLCSCheatFn_t)();
-                    ReLCSCheatFn_t pfnMoneyCheat = reinterpret_cast<ReLCSCheatFn_t>(reinterpret_cast<uintptr_t>(hReLCS) + 0x25af0);
-                    __try { pfnMoneyCheat(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-                }
-            }
-
-            // Direct memory money addition ($250,000) & health/armor
-            __try
-            {
-                int* pMoney = reinterpret_cast<int*>(pPlayerInfo + 0xA0);
-                int* pDisplayMoney = reinterpret_cast<int*>(pPlayerInfo + 0xA4);
-                *pMoney += 250000;
-                *pDisplayMoney += 250000;
-
-                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-                if (pPed)
-                {
-                    *reinterpret_cast<float*>(pPed + 0x354) = 100.0f; // Health
-                    *reinterpret_cast<float*>(pPed + 0x358) = 100.0f; // Armour
-                }
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            SafeAddMoneyAndRestore(pPlayerInfo, 250000);
             break;
 
         case LCSCheat::FullHealth:
             SimulateCheatCode("ASPIRINE");
-            __try
-            {
-                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-                if (pPed)
-                    *reinterpret_cast<float*>(pPed + 0x354) = 100.0f;
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            SafeSetHealth(pPlayerInfo, 100.0f);
             break;
 
         case LCSCheat::FullArmor:
             SimulateCheatCode("PRECIOUSPROTECTION");
-            __try
-            {
-                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-                if (pPed)
-                    *reinterpret_cast<float*>(pPed + 0x358) = 100.0f;
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            SafeSetArmour(pPlayerInfo, 100.0f);
             break;
 
         case LCSCheat::CommitSuicide:
             SimulateCheatCode("ICANTTAKEITANYMORE");
-            __try
-            {
-                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-                if (pPed)
-                    *reinterpret_cast<float*>(pPed + 0x354) = 0.0f;
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            SafeSetHealth(pPlayerInfo, 0.0f);
             break;
 
         default:
@@ -284,21 +288,7 @@ namespace ReLCS
         // Maintain Never Wanted if toggled on
         if (s_bNeverWanted)
         {
-            __try
-            {
-                uintptr_t pPlayerInfo = 0x94AD28;
-                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-                if (pPed)
-                {
-                    uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
-                    if (pWanted)
-                    {
-                        *reinterpret_cast<int*>(pWanted + 0x00) = 0;
-                        *reinterpret_cast<int*>(pWanted + 0x20) = 0;
-                    }
-                }
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            SafeSetWantedLevel(0x94AD28, 0);
         }
     }
 
