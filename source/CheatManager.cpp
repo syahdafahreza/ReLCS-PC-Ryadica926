@@ -257,11 +257,7 @@ namespace ReLCS
             *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x38) = spawn_y;
             *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x3C) = spawn_z;
 
-            // 7. Synchronize RenderWare frame hierarchy (CEntity::UpdateRwFrame at 0x4896C0)
-            typedef void(__thiscall* UpdateRwFrameFn_t)(void*);
-            reinterpret_cast<UpdateRwFrameFn_t>(0x4896C0)(pVeh);
-
-            // 8. Configure status flags (STATUS_PLAYER = 0x20) and unlocked doors
+            // 7. Configure status flags (STATUS_PLAYER = 0x20) and unlocked doors
             uint8_t* pStatus = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x50);
             *pStatus = (*pStatus & 7) | 0x20;
 
