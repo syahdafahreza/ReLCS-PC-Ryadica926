@@ -1,5 +1,6 @@
 #include "CheatManager.h"
 #include "CrashLogger.h"
+#include <cmath>
 
 namespace ReLCS
 {
@@ -128,9 +129,148 @@ namespace ReLCS
     {
         __try
         {
-            typedef void(__cdecl* SpawnVehicleFn_t)(int);
-            SpawnVehicleFn_t pfnSpawn = reinterpret_cast<SpawnVehicleFn_t>(0x4AE8F0);
-            pfnSpawn(modelId);
+            const uintptr_t pPlayerInfo = 0x94AD28;
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (!pPed) return;
+
+            // 1. Request and load vehicle model synchronously via CStreaming
+            typedef void(__cdecl* RequestModelFn_t)(int, int);
+            typedef void(__cdecl* LoadAllRequestedModelsFn_t)(bool);
+            typedef void(__cdecl* SetModelIsDeletableFn_t)(int);
+
+            RequestModelFn_t pfnRequestModel = reinterpret_cast<RequestModelFn_t>(0x40E310);
+            LoadAllRequestedModelsFn_t pfnLoadModels = reinterpret_cast<LoadAllRequestedModelsFn_t>(0x40B5F0);
+            SetModelIsDeletableFn_t pfnSetDeletable = reinterpret_cast<SetModelIsDeletableFn_t>(0x40AEA0);
+
+            pfnRequestModel(modelId, 1);
+            pfnLoadModels(false);
+
+            // 2. Read player position and forward facing direction from CMatrix at pPed + 0x04
+            float px = *reinterpret_cast<float*>(pPed + 0x34);
+            float py = *reinterpret_cast<float*>(pPed + 0x38);
+            float pz = *reinterpret_cast<float*>(pPed + 0x3C);
+
+            float fx = *reinterpret_cast<float*>(pPed + 0x14);
+            float fy = *reinterpret_cast<float*>(pPed + 0x18);
+
+            float len = sqrtf(fx * fx + fy * fy);
+            float dir_x = (len > 0.001f) ? (fx / len) : 0.0f;
+            float dir_y = (len > 0.001f) ? (fy / len) : 1.0f;
+
+            // Heading angle in radians: in GTA coordinate system (forward.x = -sin(heading), forward.y = cos(heading))
+            float heading = atan2f(-dir_x, dir_y);
+            // Rotate vehicle 90 degrees sideways so driver seat (left door) faces directly towards Toni!
+            float veh_heading = heading + 1.57079632679f;
+
+            // 3. Determine vehicle class and exact allocation size
+            // Bikes in LCS: 202 (Angel) through 210 (Sanchez)
+            bool isBike = (modelId >= 202 && modelId <= 210);
+            // Boats in LCS: 192 (Ferry) through 196 (Predator)
+            bool isBoat = (modelId >= 192 && modelId <= 196);
+
+            size_t allocSize = 0;
+            int vehType = 2; // 0: Boat, 1: Bike, 2: Automobile
+            if (isBoat)
+            {
+                allocSize = 0x4C0; // CBoat
+                vehType = 0;
+            }
+            else if (isBike)
+            {
+                allocSize = 0x4EC; // CBike
+                vehType = 1;
+            }
+            else
+            {
+                allocSize = 0x5DC; // CAutomobile
+                vehType = 2;
+            }
+
+            // Calculate distance in front of Toni
+            uintptr_t inVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
+            float dist = 5.0f;
+            if (inVeh)
+                dist = 8.5f;
+            else if (modelId == 162 || modelId == 139 || modelId == 163 || modelId == 161 || modelId == 165 || modelId == 213)
+                dist = 8.5f; // Large vehicles (Rhino, Trashmaster, Barracks, Bus, Coach, Hunter)
+            else if (isBoat)
+                dist = 10.0f;
+            else if (isBike)
+                dist = 3.5f;
+
+            float spawn_x = px + dir_x * dist;
+            float spawn_y = py + dir_y * dist;
+
+            // 4. Query exact ground elevation via CWorld::FindGroundZForCoord (0x4D5540)
+            typedef float(__cdecl* FindGroundZFn_t)(float, float);
+            FindGroundZFn_t pfnFindGroundZ = reinterpret_cast<FindGroundZFn_t>(0x4D5540);
+            float ground_z = pfnFindGroundZ(spawn_x, spawn_y);
+
+            float spawn_z = pz;
+            if (ground_z > -50.0f && fabsf(ground_z - pz) < 12.0f)
+                spawn_z = ground_z;
+
+            float final_z = spawn_z + (isBike ? 0.25f : (isBoat ? 0.0f : 0.45f));
+
+            // 5. Allocate vehicle memory using game operator new (0x5BAB20)
+            typedef void*(__cdecl* OperatorNewFn_t)(size_t);
+            OperatorNewFn_t pfnNew = reinterpret_cast<OperatorNewFn_t>(0x5BAB20);
+            void* pVeh = pfnNew(allocSize);
+            if (!pVeh)
+                return;
+
+            uintptr_t veh = reinterpret_cast<uintptr_t>(pVeh);
+
+            // 6. Invoke proper C++ constructor based on vehicle type
+            if (vehType == 0)
+            {
+                // CBoat::CBoat(veh, modelId, 2) at 0x5A6470
+                typedef void(__thiscall* CBoatCtor_t)(void*, int, unsigned char);
+                reinterpret_cast<CBoatCtor_t>(0x5A6470)(pVeh, modelId, 2);
+            }
+            else if (vehType == 1)
+            {
+                // CBike::CBike(veh, modelId, 2) at 0x615740
+                typedef void(__thiscall* CBikeCtor_t)(void*, int, unsigned char);
+                reinterpret_cast<CBikeCtor_t>(0x615740)(pVeh, modelId, 2);
+            }
+            else
+            {
+                // CAutomobile::CAutomobile(veh, modelId, 2) at 0x59E620
+                typedef void(__thiscall* CAutoCtor_t)(void*, int, unsigned char);
+                reinterpret_cast<CAutoCtor_t>(0x59E620)(pVeh, modelId, 2);
+            }
+
+            // 7. Set rotation sideways facing driver door using CMatrix::SetRotate at 0x4DF240
+            typedef void(__thiscall* SetRotateFn_t)(void*, float, float, float);
+            SetRotateFn_t pfnSetRotate = reinterpret_cast<SetRotateFn_t>(0x4DF240);
+            pfnSetRotate(reinterpret_cast<void*>(veh + 0x04), 0.0f, 0.0f, veh_heading);
+
+            // Set vehicle coordinates in CPlaceable matrix at veh + 0x34
+            *reinterpret_cast<float*>(veh + 0x34) = spawn_x;
+            *reinterpret_cast<float*>(veh + 0x38) = spawn_y;
+            *reinterpret_cast<float*>(veh + 0x3C) = final_z;
+
+            // 8. Configure status flags and unlocked doors
+            uint8_t* pStatus = reinterpret_cast<uint8_t*>(veh + 0x52);
+            *pStatus = (*pStatus & ~0x38) | (4 << 3); // STATUS_PLAYER
+
+            if (vehType == 2)
+            {
+                *reinterpret_cast<uint32_t*>(veh + 0x230) = 1; // Unlocked doors
+            }
+            else if (vehType == 0)
+            {
+                *reinterpret_cast<float*>(veh + 0x15C) = 20.0f; // Boat water buoyancy
+                *reinterpret_cast<uint8_t*>(veh + 0x160) = 20;
+            }
+
+            // 9. Add vehicle entity to CWorld at 0x4DB3F0
+            typedef void(__cdecl* WorldAddFn_t)(void*);
+            reinterpret_cast<WorldAddFn_t>(0x4DB3F0)(pVeh);
+
+            // 10. Mark model as deletable so CStreaming cache is managed normally
+            pfnSetDeletable(modelId);
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
