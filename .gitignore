@@ -1,0 +1,14 @@
+# Visual Studio build & user files
+.vs/
+build/
+intermediate/
+*.user
+*.suo
+*.VC.db
+*.opendb
+
+# Logs and dumps
+*.log
+*.dmp
+scripts/*.log
+scripts/*.dmp
