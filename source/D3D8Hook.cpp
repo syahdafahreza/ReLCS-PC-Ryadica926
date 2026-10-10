@@ -29,6 +29,18 @@ namespace ReLCS
         }
     }
 
+    static void SafeRenderOverlay(IDirect3DDevice8* pDevice)
+    {
+        __try
+        {
+            OverlayMenu::Render(pDevice);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            // Fail safely to prevent overlay rendering crash from killing the game
+        }
+    }
+
     HRESULT STDMETHODCALLTYPE D3D8Hook::Hooked_Present(
         IDirect3DDevice8* pThis,
         CONST RECT* pSourceRect,
@@ -37,14 +49,7 @@ namespace ReLCS
         CONST RGNDATA* pDirtyRegion)
     {
         // Render menu overlay onto backbuffer
-        __try
-        {
-            OverlayMenu::Render(pThis);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            // Fail safely to prevent overlay rendering crash from killing the game
-        }
+        SafeRenderOverlay(pThis);
 
         if (s_origPresent)
             return s_origPresent(pThis, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
@@ -137,14 +142,8 @@ namespace ReLCS
         d3dpp.hDeviceWindow = hDummyWnd;
 
         IDirect3DDevice8* pDummyDevice = nullptr;
-        HRESULT hr = pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_NULLREF, hDummyWnd,
+        HRESULT hr = pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_REF, hDummyWnd,
             D3DCREATE_SOFTWARE_VERTEXPROCESSING, &d3dpp, &pDummyDevice);
-
-        if (FAILED(hr))
-        {
-            hr = pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_REF, hDummyWnd,
-                D3DCREATE_SOFTWARE_VERTEXPROCESSING, &d3dpp, &pDummyDevice);
-        }
 
         if (FAILED(hr))
         {

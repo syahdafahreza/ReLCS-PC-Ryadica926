@@ -104,6 +104,19 @@ namespace ReLCS
         }
     }
 
+    static bool SafeReadDword(const uint32_t* pAddr, uint32_t* pOutVal)
+    {
+        __try
+        {
+            *pOutVal = *pAddr;
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
     LONG WINAPI CrashLogger::CrashHandler(EXCEPTION_POINTERS* pExceptionPointers)
     {
         if (!pExceptionPointers || !pExceptionPointers->ExceptionRecord || !pExceptionPointers->ContextRecord)
@@ -152,12 +165,13 @@ namespace ReLCS
         uint32_t* pStack = reinterpret_cast<uint32_t*>(ctx->Esp);
         for (int i = 0; i < 16; i++)
         {
-            __try
+            uint32_t stackVal = 0;
+            if (SafeReadDword(&pStack[i], &stackVal))
             {
-                ss << "  [ESP+" << std::dec << (i * 4) << "] = 0x" << std::hex << pStack[i]
-                   << " (" << GetModuleName(reinterpret_cast<void*>(pStack[i])) << ")\n";
+                ss << "  [ESP+" << std::dec << (i * 4) << "] = 0x" << std::hex << stackVal
+                   << " (" << GetModuleName(reinterpret_cast<void*>(stackVal)) << ")\n";
             }
-            __except (EXCEPTION_EXECUTE_HANDLER)
+            else
             {
                 ss << "  [ESP+" << std::dec << (i * 4) << "] = <unreadable>\n";
                 break;
