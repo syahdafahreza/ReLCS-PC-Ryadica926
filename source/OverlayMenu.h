@@ -24,7 +24,7 @@ namespace ReLCS
         static void OnResetDevice(IDirect3DDevice9* pDevice);
 
         static bool IsVisible() { return s_bVisible; }
-        static void ToggleVisibility() { s_bVisible = !s_bVisible; }
+        static void ToggleVisibility();
 
         static bool IsFpsCounterEnabled() { return s_bShowFps; }
         static void ToggleFpsCounter() { s_bShowFps = !s_bShowFps; }

@@ -69,7 +69,9 @@ namespace ReLCS
     void CheatManager::FindGameOffsets()
     {
         // Find main game window
-        s_hGameWnd = FindWindowA("Grand Theft Auto", nullptr);
+        s_hGameWnd = FindWindowA("Grand theft auto 3", nullptr);
+        if (!s_hGameWnd)
+            s_hGameWnd = FindWindowA("Grand Theft Auto", nullptr);
         if (!s_hGameWnd)
             s_hGameWnd = FindWindowA(nullptr, "GTA: Liberty City Stories");
         if (!s_hGameWnd)
@@ -81,28 +83,22 @@ namespace ReLCS
         if (code.empty())
             return;
 
-        if (!s_hGameWnd || !IsWindow(s_hGameWnd))
-            FindGameOffsets();
-
-        HWND target = s_hGameWnd ? s_hGameWnd : GetForegroundWindow();
+        // Directly call the game's native CPad::AddToPCCheatString at 0x4ABD20 with CPad::Pads[0] at 0x7DBCB0
+        typedef void(__thiscall* AddToPCCheatString_t)(void* pPad, char c);
+        AddToPCCheatString_t pfnAddCheat = reinterpret_cast<AddToPCCheatString_t>(0x4ABD20);
+        void* pPad = reinterpret_cast<void*>(0x7DBCB0);
 
         for (char c : code)
         {
-            SHORT vk = VkKeyScanA(c);
-            BYTE vkCode = LOBYTE(vk);
-
-            if (target)
+            char upperChar = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+            __try
             {
-                PostMessageA(target, WM_KEYDOWN, vkCode, 0);
-                PostMessageA(target, WM_CHAR, static_cast<WPARAM>(c), 0);
-                PostMessageA(target, WM_KEYUP, vkCode, 0xC0000001);
+                pfnAddCheat(pPad, upperChar);
             }
-            else
+            __except (EXCEPTION_EXECUTE_HANDLER)
             {
-                keybd_event(vkCode, 0, 0, 0);
-                keybd_event(vkCode, 0, KEYEVENTF_KEYUP, 0);
+                break;
             }
-            Sleep(2);
         }
     }
 
@@ -112,13 +108,72 @@ namespace ReLCS
         if (!info)
             return false;
 
-        // Custom cheat handling
+        uintptr_t pPlayerInfo = 0x94AD28;
+
         switch (cheat)
         {
         case LCSCheat::NeverWanted:
             s_bNeverWanted = !s_bNeverWanted;
             if (s_bNeverWanted)
+            {
                 SimulateCheatCode("LEAVEMEALONE");
+                __try
+                {
+                    uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+                    if (pPed)
+                    {
+                        uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
+                        if (pWanted)
+                        {
+                            *reinterpret_cast<int*>(pWanted + 0x00) = 0;
+                            *reinterpret_cast<int*>(pWanted + 0x20) = 0;
+                        }
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER) {}
+            }
+            break;
+
+        case LCSCheat::ClearWantedLevel:
+            SimulateCheatCode("LEAVEMEALONE");
+            __try
+            {
+                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+                if (pPed)
+                {
+                    uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
+                    if (pWanted)
+                    {
+                        *reinterpret_cast<int*>(pWanted + 0x00) = 0;
+                        *reinterpret_cast<int*>(pWanted + 0x20) = 0;
+                    }
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            break;
+
+        case LCSCheat::RaiseWantedLevel:
+            SimulateCheatCode("YOUWONTTAKEMEALIVE");
+            __try
+            {
+                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+                if (pPed)
+                {
+                    uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
+                    if (pWanted)
+                    {
+                        int cur = *reinterpret_cast<int*>(pWanted + 0x20);
+                        if (cur < 6)
+                        {
+                            cur += 2;
+                            if (cur > 6) cur = 6;
+                            *reinterpret_cast<int*>(pWanted + 0x20) = cur;
+                            *reinterpret_cast<int*>(pWanted + 0x00) = cur * 150;
+                        }
+                    }
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
             break;
 
         case LCSCheat::UpsideDownMode:
@@ -130,9 +185,70 @@ namespace ReLCS
             break;
 
         case LCSCheat::HealthArmorMoney250K:
+            // Native cheats
             SimulateCheatCode("ASPIRINE");
-            Sleep(15);
             SimulateCheatCode("PRECIOUSPROTECTION");
+
+            // If ReLCS.dll is loaded, call its native $250k cheat function
+            {
+                HMODULE hReLCS = GetModuleHandleA("ReLCS.dll");
+                if (hReLCS)
+                {
+                    typedef void (*ReLCSCheatFn_t)();
+                    ReLCSCheatFn_t pfnMoneyCheat = reinterpret_cast<ReLCSCheatFn_t>(reinterpret_cast<uintptr_t>(hReLCS) + 0x25af0);
+                    __try { pfnMoneyCheat(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                }
+            }
+
+            // Direct memory money addition ($250,000) & health/armor
+            __try
+            {
+                int* pMoney = reinterpret_cast<int*>(pPlayerInfo + 0xA0);
+                int* pDisplayMoney = reinterpret_cast<int*>(pPlayerInfo + 0xA4);
+                *pMoney += 250000;
+                *pDisplayMoney += 250000;
+
+                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+                if (pPed)
+                {
+                    *reinterpret_cast<float*>(pPed + 0x354) = 100.0f; // Health
+                    *reinterpret_cast<float*>(pPed + 0x358) = 100.0f; // Armour
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            break;
+
+        case LCSCheat::FullHealth:
+            SimulateCheatCode("ASPIRINE");
+            __try
+            {
+                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+                if (pPed)
+                    *reinterpret_cast<float*>(pPed + 0x354) = 100.0f;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            break;
+
+        case LCSCheat::FullArmor:
+            SimulateCheatCode("PRECIOUSPROTECTION");
+            __try
+            {
+                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+                if (pPed)
+                    *reinterpret_cast<float*>(pPed + 0x358) = 100.0f;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            break;
+
+        case LCSCheat::CommitSuicide:
+            SimulateCheatCode("ICANTTAKEITANYMORE");
+            __try
+            {
+                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+                if (pPed)
+                    *reinterpret_cast<float*>(pPed + 0x354) = 0.0f;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
             break;
 
         default:
@@ -168,13 +284,21 @@ namespace ReLCS
         // Maintain Never Wanted if toggled on
         if (s_bNeverWanted)
         {
-            static auto lastNeverWantedCheck = std::chrono::steady_clock::now();
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastNeverWantedCheck).count() > 1000)
+            __try
             {
-                lastNeverWantedCheck = now;
-                SimulateCheatCode("LEAVEMEALONE");
+                uintptr_t pPlayerInfo = 0x94AD28;
+                uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+                if (pPed)
+                {
+                    uintptr_t pWanted = *reinterpret_cast<uintptr_t*>(pPed + 0x5F4);
+                    if (pWanted)
+                    {
+                        *reinterpret_cast<int*>(pWanted + 0x00) = 0;
+                        *reinterpret_cast<int*>(pWanted + 0x20) = 0;
+                    }
+                }
             }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
         }
     }
 

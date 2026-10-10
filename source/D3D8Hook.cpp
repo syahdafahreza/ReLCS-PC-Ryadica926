@@ -72,11 +72,21 @@ namespace ReLCS
                 return 0; // Swallow while menu is open
             }
         }
-        else if (uMsg == WM_LBUTTONDOWN || uMsg == WM_RBUTTONDOWN || uMsg == WM_MBUTTONDOWN)
+        else if (OverlayMenu::IsVisible())
         {
-            if (OverlayMenu::IsVisible())
+            if (uMsg == WM_SETCURSOR)
             {
-                return 0; // Swallow mouse clicks while menu is open
+                SetCursor(LoadCursorA(nullptr, IDC_ARROW));
+                return TRUE;
+            }
+
+            if (uMsg == WM_MOUSEMOVE ||
+                uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONUP ||
+                uMsg == WM_RBUTTONDOWN || uMsg == WM_RBUTTONUP ||
+                uMsg == WM_MBUTTONDOWN || uMsg == WM_MBUTTONUP ||
+                uMsg == WM_MOUSEWHEEL)
+            {
+                return 0; // Swallow mouse events while menu is open
             }
         }
 
@@ -166,6 +176,18 @@ namespace ReLCS
 
     HRESULT STDMETHODCALLTYPE D3D8Hook::Hooked_EndScene(IDirect3DDevice9* pThis)
     {
+        if (OverlayMenu::IsVisible())
+        {
+            // Keep cursor unclipped and clear DirectInput mouse state each frame
+            ClipCursor(nullptr);
+            __try
+            {
+                memset(reinterpret_cast<void*>(0x94D788), 0, 0x18); // CPad::NewMouseControllerState
+                memset(reinterpret_cast<void*>(0x936908), 0, 0x18); // CPad::OldMouseControllerState
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+
         // Render menu overlay at the end of the scene before buffer is presented
         SafeRenderOverlay(pThis);
 

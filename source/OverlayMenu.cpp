@@ -23,6 +23,20 @@ namespace ReLCS
         s_lastFpsTime = std::chrono::steady_clock::now();
     }
 
+    void OverlayMenu::ToggleVisibility()
+    {
+        s_bVisible = !s_bVisible;
+        if (s_bVisible)
+        {
+            ClipCursor(nullptr);
+            while (ShowCursor(TRUE) < 0);
+        }
+        else
+        {
+            while (ShowCursor(FALSE) >= 0);
+        }
+    }
+
     std::vector<CheatInfo> OverlayMenu::GetCheatsForCategory(int categoryIndex)
     {
         std::vector<CheatInfo> result;
@@ -266,26 +280,7 @@ namespace ReLCS
             DrawTextString(pDevice, 16.0f, 15.0f, fpsBuf, 0xFF10B981, 1.2f);
         }
 
-        // 2. Draw Cheat Activation Toast Banner
-        float notifAlpha = CheatManager::GetNotificationAlpha();
-        if (notifAlpha > 0.01f)
-        {
-            DWORD a = static_cast<DWORD>(notifAlpha * 255.0f);
-            DWORD bannerBg = (a << 24) | 0x001E293B; // Slate background
-            DWORD bannerText = (a << 24) | 0x00F8FAFC;
-            DWORD bannerAccent = (a << 24) | 0x003B82F6; // Blue border
-
-            std::string notifStr = "[ CHEAT ACTIVATED: " + CheatManager::GetLastActivatedCheatName() + " ]";
-            float bannerW = (notifStr.length() * 10.0f) + 40.0f;
-            float bannerX = 400.0f - (bannerW / 2.0f);
-            if (bannerX < 20.0f) bannerX = 20.0f;
-
-            DrawRect(pDevice, bannerX - 2.0f, 28.0f, bannerW + 4.0f, 32.0f, bannerAccent);
-            DrawRect(pDevice, bannerX, 30.0f, bannerW, 28.0f, bannerBg);
-            DrawTextString(pDevice, bannerX + 20.0f, 38.0f, notifStr, bannerText, 1.25f);
-        }
-
-        // 3. Draw Menu Window (if visible)
+        // 2. Draw Menu Window (if visible)
         if (s_bVisible)
         {
             const float menuX = 35.0f;
@@ -379,6 +374,31 @@ namespace ReLCS
             DrawRect(pDevice, menuX, footerY, menuW, 30.0f, 0xFF0F172A);
             DrawTextString(pDevice, menuX + 16.0f, footerY + 8.0f,
                 "[UP/DN] Navigate  [LEFT/RT] Tab  [ENTER] Apply  [F9] Close", 0xFF94A3B8, 1.05f);
+        }
+
+        // 3. Draw Cheat Activation Toast Banner (on top of menu so it never clips)
+        float notifAlpha = CheatManager::GetNotificationAlpha();
+        if (notifAlpha > 0.01f)
+        {
+            DWORD a = static_cast<DWORD>(notifAlpha * 255.0f);
+            DWORD bannerBg = (a << 24) | 0x001E293B; // Slate background
+            DWORD bannerText = (a << 24) | 0x00F8FAFC;
+            DWORD bannerAccent = (a << 24) | 0x003B82F6; // Blue border
+
+            std::string notifStr = "[ CHEAT ACTIVATED: " + CheatManager::GetLastActivatedCheatName() + " ]";
+            float bannerW = (notifStr.length() * 10.0f) + 40.0f;
+
+            D3DVIEWPORT9 vp;
+            float screenCenterX = 400.0f;
+            if (SUCCEEDED(pDevice->GetViewport(&vp)) && vp.Width > 0)
+                screenCenterX = vp.Width / 2.0f;
+
+            float bannerX = screenCenterX - (bannerW / 2.0f);
+            if (bannerX < 20.0f) bannerX = 20.0f;
+
+            DrawRect(pDevice, bannerX - 2.0f, 12.0f, bannerW + 4.0f, 32.0f, bannerAccent);
+            DrawRect(pDevice, bannerX, 14.0f, bannerW, 28.0f, bannerBg);
+            DrawTextString(pDevice, bannerX + 20.0f, 22.0f, notifStr, bannerText, 1.25f);
         }
 
         // Apply and release state block to restore original game graphics pipeline
