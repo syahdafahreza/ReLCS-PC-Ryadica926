@@ -6,9 +6,11 @@ namespace ReLCS
 {
     enum class LCSCheat : uint32_t
     {
-        // Player Cheats (1-10)
+        // Player Cheats
         FullHealth = 1,
         FullArmor,
+        InfiniteHealth,
+        InfiniteArmor,
         HealthArmorMoney250K,
         WeaponSet1,
         WeaponSet2,
@@ -19,18 +21,47 @@ namespace ReLCS
         UnlimitedAmmo,
         CommitSuicide,
 
-        // Vehicle Cheats (11-19)
+        // Vehicle Cheats & Spawners
         SpawnRhino,
+        SpawnInfernus,
+        SpawnCheetah,
+        SpawnBanshee,
+        SpawnStinger,
+        SpawnYakuzaStinger,
+        SpawnDiabloStallion,
+        SpawnMafiaSentinel,
+        SpawnPCJ600,
+        SpawnFreeway,
+        SpawnSanchez,
+        SpawnFaggio,
+        SpawnPizzaBoy,
+        SpawnAngel,
+        SpawnPatriot,
+        SpawnPolice,
+        SpawnEnforcer,
+        SpawnFiretruck,
+        SpawnAmbulance,
+        SpawnStretch,
         SpawnTrashmaster,
+        SpawnBFInjection,
+        SpawnLandstalker,
+        SpawnHellenbachGT,
+        SpawnPhobosVT,
+        SpawnDeimosSP,
+        SpawnThunderRodd,
+        SpawnBorgnine,
+        SpawnBarracks,
         SpawnDeaddodo,
+        SpawnHunter,
+        SpawnMaverick,
+        CarsDriveOnWater,
         DestroyAllCars,
         PerfectHandling,
         AggressiveDrivers,
         ChromeCars,
         BlackCars,
-        CarsDriveOnWater,
 
-        // World Cheats (20-31)
+        // World Cheats
         SunnyWeather,
         ClearWeather,
         OvercastWeather,
@@ -44,13 +75,11 @@ namespace ReLCS
         PedHaveWeapons,
         PedFollowYou,
 
-        // Visual & Gameplay Cheats (32-35)
+        // Visual & Gameplay Cheats
         SlowMotion,
         FastMotion,
         UpsideDownMode,
-        NormalOrientationMode,
-
-        COUNT = 35
+        NormalOrientationMode
     };
 
     struct CheatInfo
@@ -60,6 +89,7 @@ namespace ReLCS
         std::string category;
         std::string description;
         std::string codeString;
+        int vehicleModelId = 0;
     };
 
     class CheatManager
@@ -74,6 +104,8 @@ namespace ReLCS
         // State toggles
         static bool IsNeverWantedEnabled() { return s_bNeverWanted; }
         static bool IsUnlimitedAmmoEnabled() { return s_bUnlimitedAmmo; }
+        static bool IsInfiniteHealthEnabled() { return s_bInfiniteHealth; }
+        static bool IsInfiniteArmorEnabled() { return s_bInfiniteArmor; }
         static bool IsUpsideDownEnabled() { return s_bUpsideDown; }
         static const std::string& GetLastActivatedCheatName() { return s_lastActivatedName; }
         static float GetNotificationAlpha() { return s_notificationAlpha; }
@@ -85,6 +117,8 @@ namespace ReLCS
         static std::vector<CheatInfo> s_cheatList;
         static std::atomic<bool> s_bNeverWanted;
         static std::atomic<bool> s_bUnlimitedAmmo;
+        static std::atomic<bool> s_bInfiniteHealth;
+        static std::atomic<bool> s_bInfiniteArmor;
         static std::atomic<bool> s_bUpsideDown;
         static std::string s_lastActivatedName;
         static float s_notificationAlpha;

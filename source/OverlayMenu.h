@@ -41,6 +41,7 @@ namespace ReLCS
         static bool s_bShowFps;
         static int s_activeCategory;
         static int s_selectedIndex;
+        static int s_scrollOffset;
         static float s_currentFps;
         static int s_frameCount;
         static std::chrono::steady_clock::time_point s_lastFpsTime;

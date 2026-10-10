@@ -7,6 +7,7 @@ namespace ReLCS
     bool OverlayMenu::s_bShowFps = false;
     int OverlayMenu::s_activeCategory = 0;
     int OverlayMenu::s_selectedIndex = 0;
+    int OverlayMenu::s_scrollOffset = 0;
     float OverlayMenu::s_currentFps = 0.0f;
     int OverlayMenu::s_frameCount = 0;
     std::chrono::steady_clock::time_point OverlayMenu::s_lastFpsTime = std::chrono::steady_clock::now();
@@ -20,6 +21,7 @@ namespace ReLCS
         s_bShowFps = false;
         s_activeCategory = 0;
         s_selectedIndex = 0;
+        s_scrollOffset = 0;
         s_lastFpsTime = std::chrono::steady_clock::now();
     }
 
@@ -132,27 +134,45 @@ namespace ReLCS
         if (s_activeCategory == 3)
             totalItems += 1; // FPS counter toggle
 
+        const int MAX_VISIBLE_ROWS = 12;
+
         if (vk == VK_LEFT)
         {
             s_activeCategory = (s_activeCategory - 1 + 4) % 4;
             s_selectedIndex = 0;
+            s_scrollOffset = 0;
         }
         else if (vk == VK_RIGHT)
         {
             s_activeCategory = (s_activeCategory + 1) % 4;
             s_selectedIndex = 0;
+            s_scrollOffset = 0;
         }
         else if (vk == VK_UP)
         {
             s_selectedIndex--;
             if (s_selectedIndex < 0)
+            {
                 s_selectedIndex = (totalItems > 0 ? totalItems - 1 : 0);
+                s_scrollOffset = (std::max)(0, totalItems - MAX_VISIBLE_ROWS);
+            }
+            else if (s_selectedIndex < s_scrollOffset)
+            {
+                s_scrollOffset = s_selectedIndex;
+            }
         }
         else if (vk == VK_DOWN)
         {
             s_selectedIndex++;
             if (s_selectedIndex >= totalItems)
+            {
                 s_selectedIndex = 0;
+                s_scrollOffset = 0;
+            }
+            else if (s_selectedIndex >= s_scrollOffset + MAX_VISIBLE_ROWS)
+            {
+                s_scrollOffset = s_selectedIndex - MAX_VISIBLE_ROWS + 1;
+            }
         }
         else if (vk == VK_RETURN)
         {
@@ -318,12 +338,17 @@ namespace ReLCS
             if (s_activeCategory == 3)
                 totalRows += 1; // FPS counter item
 
+            const int MAX_VISIBLE_ROWS = 12;
+            int firstVisible = s_scrollOffset;
+            int countToDraw = (std::min)(MAX_VISIBLE_ROWS, totalRows - firstVisible);
+
             float itemStartY = tabY + 34.0f;
             float rowH = 26.0f;
 
-            for (int i = 0; i < totalRows; i++)
+            for (int k = 0; k < countToDraw; k++)
             {
-                float rowY = itemStartY + (i * rowH);
+                int i = firstVisible + k;
+                float rowY = itemStartY + (k * rowH);
                 bool isSelected = (i == s_selectedIndex);
 
                 if (isSelected)
@@ -361,6 +386,16 @@ namespace ReLCS
                         tag = CheatManager::IsUnlimitedAmmoEnabled() ? "[ACTIVE]" : "[OFF]";
                         tagColor = CheatManager::IsUnlimitedAmmoEnabled() ? 0xFF10B981 : 0xFF94A3B8;
                     }
+                    else if (item.id == LCSCheat::InfiniteHealth)
+                    {
+                        tag = CheatManager::IsInfiniteHealthEnabled() ? "[ACTIVE]" : "[OFF]";
+                        tagColor = CheatManager::IsInfiniteHealthEnabled() ? 0xFF10B981 : 0xFF94A3B8;
+                    }
+                    else if (item.id == LCSCheat::InfiniteArmor)
+                    {
+                        tag = CheatManager::IsInfiniteArmorEnabled() ? "[ACTIVE]" : "[OFF]";
+                        tagColor = CheatManager::IsInfiniteArmorEnabled() ? 0xFF10B981 : 0xFF94A3B8;
+                    }
                     else if (item.id == LCSCheat::UpsideDownMode)
                     {
                         tag = CheatManager::IsUpsideDownEnabled() ? "[ACTIVE]" : "";
@@ -374,11 +409,30 @@ namespace ReLCS
                 }
             }
 
+            // Draw scrollbar if content exceeds MAX_VISIBLE_ROWS
+            if (totalRows > MAX_VISIBLE_ROWS)
+            {
+                float scrollTrackX = menuX + menuW - 7.0f;
+                float scrollTrackY = itemStartY - 2.0f;
+                float scrollTrackH = (MAX_VISIBLE_ROWS * rowH);
+                DrawRect(pDevice, scrollTrackX, scrollTrackY, 3.0f, scrollTrackH, 0x44FFFFFF);
+
+                float thumbH = ((float)MAX_VISIBLE_ROWS / (float)totalRows) * scrollTrackH;
+                if (thumbH < 14.0f) thumbH = 14.0f;
+                float scrollProgress = (float)s_scrollOffset / (float)(totalRows - MAX_VISIBLE_ROWS);
+                float thumbY = scrollTrackY + scrollProgress * (scrollTrackH - thumbH);
+                DrawRect(pDevice, scrollTrackX, thumbY, 3.0f, thumbH, 0xFF3B82F6);
+            }
+
             // Footer instructions bar
             float footerY = menuY + menuH - 30.0f;
             DrawRect(pDevice, menuX, footerY, menuW, 30.0f, 0xFF0F172A);
             DrawTextString(pDevice, menuX + 16.0f, footerY + 8.0f,
-                "[UP/DN] Navigate  [LEFT/RT] Tab  [ENTER] Apply  [F9] Close", 0xFF94A3B8, 1.05f);
+                "[UP/DN] Move  [ENTER] Apply  [F9] Close", 0xFF94A3B8, 1.05f);
+
+            char counterBuf[32];
+            snprintf(counterBuf, sizeof(counterBuf), "[%d/%d]", s_selectedIndex + 1, totalRows);
+            DrawTextString(pDevice, menuX + menuW - 70.0f, footerY + 8.0f, counterBuf, 0xFF60A5FA, 1.05f);
         }
 
         // 3. Draw Cheat Activation Toast Banner (on top of menu so it never clips)

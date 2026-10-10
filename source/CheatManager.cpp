@@ -6,6 +6,8 @@ namespace ReLCS
     std::vector<CheatInfo> CheatManager::s_cheatList;
     std::atomic<bool> CheatManager::s_bNeverWanted(false);
     std::atomic<bool> CheatManager::s_bUnlimitedAmmo(false);
+    std::atomic<bool> CheatManager::s_bInfiniteHealth(false);
+    std::atomic<bool> CheatManager::s_bInfiniteArmor(false);
     std::atomic<bool> CheatManager::s_bUpsideDown(false);
     std::string CheatManager::s_lastActivatedName = "";
     float CheatManager::s_notificationAlpha = 0.0f;
@@ -22,26 +24,57 @@ namespace ReLCS
             // Player Cheats
             { LCSCheat::FullHealth, "Full Health", "Player", "Restores player health to 100%", "GRABEMPILLS" },
             { LCSCheat::FullArmor, "Full Armor", "Player", "Restores body armor to 100%", "JUSTKEVLAR" },
+            { LCSCheat::InfiniteHealth, "Infinite Health [Toggle]", "Player", "God mode: immune to damage, health locked at max", "" },
+            { LCSCheat::InfiniteArmor, "Infinite Armor [Toggle]", "Player", "Locks body armor permanently at 100%", "" },
             { LCSCheat::HealthArmorMoney250K, "$250,000 + Health + Armor", "Player", "Gives $250k cash and full restoration", "NOTEVENRICH" },
-            { LCSCheat::WeaponSet1, "Weapon Set 1", "Player", "Brass knuckles, knife, Molotov, 9mm, shotgun, etc.", "TERRORIST" },
-            { LCSCheat::WeaponSet2, "Weapon Set 2", "Player", "Katana, grenades, .357, Uzi, M4, rocket launcher", "PALETO" },
-            { LCSCheat::WeaponSet3, "Weapon Set 3", "Player", "Chainsaw, grenades, laser sniper, spaz, minigun", "ICANCU" },
+            { LCSCheat::WeaponSet1, "Weapon Set 1 (Street)", "Player", "Knuckles, knife, 9mm, shotgun, Tec-9, Ruger, sniper, Molotov, flame", "TERRORIST" },
+            { LCSCheat::WeaponSet2, "Weapon Set 2 (Tactical)", "Player", "Katana, .357 Python, stubby, Uzi, M4, laser sniper, grenade, RPG", "PALETO" },
+            { LCSCheat::WeaponSet3, "Weapon Set 3 (Heavy Rampage)", "Player", "Chainsaw, Spas-12, MP5, M60 heavy MG, teargas, minigun", "ICANCU" },
             { LCSCheat::ClearWantedLevel, "Clear Wanted Level", "Player", "Removes all wanted stars immediately", "POLITICALIMUNITY" },
             { LCSCheat::RaiseWantedLevel, "Raise Wanted Level (+2)", "Player", "Increases wanted level by 2 stars", "CROOKEDTONI" },
             { LCSCheat::NeverWanted, "Never Wanted [Toggle]", "Player", "Keeps wanted level permanently at zero", "POLITICALIMUNITY" },
             { LCSCheat::UnlimitedAmmo, "Unlimited Ammo [Toggle]", "Player", "Infinite ammo and no reload for all weapons", "" },
             { LCSCheat::CommitSuicide, "Commit Suicide", "Player", "Instantly eliminates the player character", "KYSMATE" },
 
-            // Vehicle Cheats
-            { LCSCheat::SpawnRhino, "Spawn Rhino Tank", "Vehicle", "Spawns a Rhino military tank near player", "TOOLOFPEACE" },
-            { LCSCheat::SpawnTrashmaster, "Spawn Trashmaster", "Vehicle", "Spawns a city garbage truck", "UNTOUCHABLE" },
-            { LCSCheat::SpawnDeaddodo, "Spawn Deaddodo", "Vehicle", "Spawns an airplane near player", "AIRSHIP" },
+            // Vehicle Cheats & Spawners
+            { LCSCheat::SpawnInfernus, "Infernus", "Vehicle", "Spawns Infernus supercar", "", 142 },
+            { LCSCheat::SpawnCheetah, "Cheetah", "Vehicle", "Spawns Cheetah supercar", "", 146 },
+            { LCSCheat::SpawnBanshee, "Banshee", "Vehicle", "Spawns Banshee sports car", "", 160 },
+            { LCSCheat::SpawnStinger, "Stinger", "Vehicle", "Spawns Stinger sports car", "", 133 },
+            { LCSCheat::SpawnYakuzaStinger, "Yakuza Stinger", "Vehicle", "Spawns Yakuza gang stinger", "", 174 },
+            { LCSCheat::SpawnDiabloStallion, "Diablo Stallion", "Vehicle", "Spawns Diablo gang muscle car", "", 175 },
+            { LCSCheat::SpawnMafiaSentinel, "Mafia Sentinel", "Vehicle", "Spawns Leone Mafia sentinel", "", 172 },
+            { LCSCheat::SpawnHellenbachGT, "Hellenbach GT", "Vehicle", "Spawns rare Hellenbach GT coupe", "", 185 },
+            { LCSCheat::SpawnPhobosVT, "Phobos VT", "Vehicle", "Spawns Phobos VT muscle car", "", 186 },
+            { LCSCheat::SpawnDeimosSP, "Deimos SP", "Vehicle", "Spawns Deimos SP sports car", "", 187 },
+            { LCSCheat::SpawnThunderRodd, "Thunder-Rodd", "Vehicle", "Spawns Thunder-Rodd custom hotrod", "", 189 },
+            { LCSCheat::SpawnPCJ600, "PCJ-600", "Vehicle", "Spawns PCJ-600 sport motorcycle", "", 205 },
+            { LCSCheat::SpawnFreeway, "Freeway", "Vehicle", "Spawns Freeway chopper bike", "", 207 },
+            { LCSCheat::SpawnSanchez, "Sanchez", "Vehicle", "Spawns Sanchez dirt bike", "", 210 },
+            { LCSCheat::SpawnFaggio, "Faggio", "Vehicle", "Spawns Faggio scooter moped", "", 206 },
+            { LCSCheat::SpawnPizzaBoy, "Pizza Boy", "Vehicle", "Spawns Pizza Boy delivery scooter", "", 203 },
+            { LCSCheat::SpawnAngel, "Angel", "Vehicle", "Spawns Angel gang motorcycle", "", 202 },
+            { LCSCheat::SpawnRhino, "Rhino Tank", "Vehicle", "Spawns Rhino military tank", "TOOLOFPEACE", 162 },
+            { LCSCheat::SpawnBarracks, "Barracks OL", "Vehicle", "Spawns military transport truck", "", 163 },
+            { LCSCheat::SpawnPatriot, "Patriot", "Vehicle", "Spawns military 4x4 Patriot SUV", "", 137 },
+            { LCSCheat::SpawnPolice, "Police Cruiser", "Vehicle", "Spawns LCPD police cruiser", "", 157 },
+            { LCSCheat::SpawnEnforcer, "Enforcer SWAT", "Vehicle", "Spawns SWAT armored enforcer", "", 158 },
+            { LCSCheat::SpawnFiretruck, "Firetruck", "Vehicle", "Spawns municipal fire engine", "", 138 },
+            { LCSCheat::SpawnAmbulance, "Ambulance", "Vehicle", "Spawns hospital ambulance", "", 147 },
+            { LCSCheat::SpawnStretch, "Stretch Limousine", "Vehicle", "Spawns luxury stretch limo", "", 140 },
+            { LCSCheat::SpawnTrashmaster, "Trashmaster", "Vehicle", "Spawns city garbage truck", "UNTOUCHABLE", 139 },
+            { LCSCheat::SpawnBFInjection, "BF Injection", "Vehicle", "Spawns BF Injection offroad buggy", "", 155 },
+            { LCSCheat::SpawnLandstalker, "Landstalker", "Vehicle", "Spawns Landstalker luxury SUV", "", 131 },
+            { LCSCheat::SpawnBorgnine, "Borgnine Cabbie", "Vehicle", "Spawns Borgnine special taxi", "", 181 },
+            { LCSCheat::SpawnDeaddodo, "Deaddodo Plane", "Vehicle", "Spawns airplane near player", "AIRSHIP", 201 },
+            { LCSCheat::SpawnHunter, "Hunter", "Vehicle", "Spawns Hunter military attack helicopter", "", 213 },
+            { LCSCheat::SpawnMaverick, "Maverick", "Vehicle", "Spawns Maverick civilian helicopter", "", 214 },
+            { LCSCheat::CarsDriveOnWater, "Cars Drive On Water", "Vehicle", "Vehicles float and drive across water", "JESUSCAR" },
             { LCSCheat::DestroyAllCars, "Blow Up All Cars", "Vehicle", "Detonates all vehicles in area", "ALTRIGHT" },
             { LCSCheat::PerfectHandling, "Perfect Traction & Handling", "Vehicle", "Maximizes vehicle grip and cornering", "BETTERBIKES" },
             { LCSCheat::AggressiveDrivers, "Aggressive Drivers", "Vehicle", "Drivers ram into other cars aggressively", "MAXMAD" },
             { LCSCheat::ChromeCars, "White / Chrome Cars", "Vehicle", "Repaints all city vehicles white/chrome", "SOUTHTRAFFIC" },
             { LCSCheat::BlackCars, "Black Cars", "Vehicle", "Repaints all city vehicles black", "BCARSMATTER" },
-            { LCSCheat::CarsDriveOnWater, "Cars Drive On Water", "Vehicle", "Vehicles float and drive across water", "JESUSCAR" },
 
             // World Cheats
             { LCSCheat::SunnyWeather, "Sunny Weather", "World", "Sets weather to clear sunshine", "DAYOFSUN" },
@@ -65,7 +98,7 @@ namespace ReLCS
         };
 
         FindGameOffsets();
-        CrashLogger::LogMessage("[CheatManager] Initialized with 36 Re:LCS PC cheats.");
+        CrashLogger::LogMessage("[CheatManager] Initialized with Re:LCS PC cheats & car spawner.");
     }
 
     void CheatManager::FindGameOffsets()
@@ -87,6 +120,17 @@ namespace ReLCS
         __try
         {
             pfnAddCheat(pPad, c);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeSpawnVehicle(int modelId)
+    {
+        __try
+        {
+            typedef void(__cdecl* SpawnVehicleFn_t)(int);
+            SpawnVehicleFn_t pfnSpawn = reinterpret_cast<SpawnVehicleFn_t>(0x4AE8F0);
+            pfnSpawn(modelId);
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
@@ -128,7 +172,18 @@ namespace ReLCS
         {
             uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
             if (pPed)
+            {
                 *reinterpret_cast<float*>(pPed + 0x354) = health;
+
+                // Also maintain car health if player is driving a vehicle
+                uintptr_t pVehicle = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
+                if (!pVehicle)
+                    pVehicle = *reinterpret_cast<uintptr_t*>(pPed + 0x3AC);
+                if (pVehicle)
+                {
+                    *reinterpret_cast<float*>(pVehicle + 0x204) = 1000.0f;
+                }
+            }
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
@@ -191,6 +246,84 @@ namespace ReLCS
                         *reinterpret_cast<int*>(pWeapon + 0x0C) = 9999; // m_nAmmoTotal
                     }
                 }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeClearWeapons(uintptr_t pPed)
+    {
+        __try
+        {
+            if (!pPed) return;
+            for (int i = 0; i < 10; i++)
+            {
+                uintptr_t pWp = pPed + 0x408 + (i * 0x18);
+                *reinterpret_cast<int*>(pWp + 0x00) = 0; // WEAPONTYPE_UNARMED
+                *reinterpret_cast<int*>(pWp + 0x04) = 0; // WEAPONSTATE_READY
+                *reinterpret_cast<int*>(pWp + 0x08) = 0; // m_nAmmoInClip
+                *reinterpret_cast<int*>(pWp + 0x0C) = 0; // m_nAmmoTotal
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeGiveWeapon(uintptr_t pPed, int weaponType, int ammo)
+    {
+        __try
+        {
+            if (!pPed || weaponType <= 0) return;
+            typedef void(__thiscall* GiveWeaponFn_t)(void*, int, unsigned int, bool);
+            GiveWeaponFn_t pfnGiveWeapon = reinterpret_cast<GiveWeaponFn_t>(0x4FFA30);
+            pfnGiveWeapon(reinterpret_cast<void*>(pPed), weaponType, static_cast<unsigned int>(ammo), true);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeGiveWeaponSet(uintptr_t pPlayerInfo, int set)
+    {
+        __try
+        {
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (!pPed) return;
+
+            // Clear all slots first to eliminate overlap from other sets
+            SafeClearWeapons(pPed);
+
+            if (set == 1)
+            {
+                // Set 1: Thug / Street Arsenal
+                SafeGiveWeapon(pPed, 1, 1);      // Brass Knuckles
+                SafeGiveWeapon(pPed, 5, 1);      // Knife
+                SafeGiveWeapon(pPed, 17, 250);   // Pistol (.45)
+                SafeGiveWeapon(pPed, 19, 100);   // Chrome Shotgun
+                SafeGiveWeapon(pPed, 22, 500);   // Tec-9
+                SafeGiveWeapon(pPed, 27, 500);   // Ruger
+                SafeGiveWeapon(pPed, 28, 50);    // Sniper Rifle
+                SafeGiveWeapon(pPed, 15, 25);    // Molotov Cocktails
+                SafeGiveWeapon(pPed, 31, 500);   // Flamethrower
+            }
+            else if (set == 2)
+            {
+                // Set 2: Tactical / Professional Arsenal
+                SafeGiveWeapon(pPed, 10, 1);     // Katana
+                SafeGiveWeapon(pPed, 18, 150);   // .357 Python
+                SafeGiveWeapon(pPed, 21, 100);   // Stubby Shotgun
+                SafeGiveWeapon(pPed, 24, 500);   // Silenced Ingram (Mac-10)
+                SafeGiveWeapon(pPed, 26, 500);   // M4
+                SafeGiveWeapon(pPed, 29, 50);    // Laser Scope Sniper (PSG-1)
+                SafeGiveWeapon(pPed, 12, 25);    // Grenades
+                SafeGiveWeapon(pPed, 30, 25);    // Rocket Launcher
+            }
+            else if (set == 3)
+            {
+                // Set 3: Heavy Rampage Arsenal (100% distinct weapons)
+                SafeGiveWeapon(pPed, 11, 1);     // Chainsaw
+                SafeGiveWeapon(pPed, 20, 100);   // Spas-12 Shotgun
+                SafeGiveWeapon(pPed, 25, 500);   // MP5 SMG
+                SafeGiveWeapon(pPed, 32, 500);   // M60 Heavy Machinegun
+                SafeGiveWeapon(pPed, 14, 25);    // Teargas
+                SafeGiveWeapon(pPed, 33, 500);   // Minigun
             }
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -295,6 +428,37 @@ namespace ReLCS
             }
             break;
 
+        case LCSCheat::InfiniteHealth:
+            s_bInfiniteHealth = !s_bInfiniteHealth;
+            if (s_bInfiniteHealth)
+            {
+                SafeSetHealth(pPlayerInfo, 250.0f);
+            }
+            break;
+
+        case LCSCheat::InfiniteArmor:
+            s_bInfiniteArmor = !s_bInfiniteArmor;
+            if (s_bInfiniteArmor)
+            {
+                SafeSetArmour(pPlayerInfo, 100.0f);
+            }
+            break;
+
+        case LCSCheat::WeaponSet1:
+            SimulateCheatCode("TERRORIST");
+            SafeGiveWeaponSet(pPlayerInfo, 1);
+            break;
+
+        case LCSCheat::WeaponSet2:
+            SimulateCheatCode("PALETO");
+            SafeGiveWeaponSet(pPlayerInfo, 2);
+            break;
+
+        case LCSCheat::WeaponSet3:
+            SimulateCheatCode("ICANCU");
+            SafeGiveWeaponSet(pPlayerInfo, 3);
+            break;
+
         case LCSCheat::ClearWantedLevel:
             SimulateCheatCode("POLITICALIMUNITY");
             SafeSetWantedLevel(pPlayerInfo, 0, false);
@@ -334,7 +498,15 @@ namespace ReLCS
             break;
 
         default:
-            SimulateCheatCode(info->codeString);
+            // Check if vehicle spawner
+            if (info->vehicleModelId > 0)
+            {
+                SafeSpawnVehicle(info->vehicleModelId);
+            }
+            else if (!info->codeString.empty())
+            {
+                SimulateCheatCode(info->codeString);
+            }
             break;
         }
 
@@ -373,6 +545,18 @@ namespace ReLCS
         if (s_bUnlimitedAmmo)
         {
             SafeRefillPlayerAmmo(0x94AD28);
+        }
+
+        // Maintain Infinite Health if toggled on
+        if (s_bInfiniteHealth)
+        {
+            SafeSetHealth(0x94AD28, 250.0f);
+        }
+
+        // Maintain Infinite Armor if toggled on
+        if (s_bInfiniteArmor)
+        {
+            SafeSetArmour(0x94AD28, 100.0f);
         }
     }
 
