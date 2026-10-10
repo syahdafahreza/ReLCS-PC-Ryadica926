@@ -11,7 +11,7 @@ namespace ReLCS
     int OverlayMenu::s_frameCount = 0;
     std::chrono::steady_clock::time_point OverlayMenu::s_lastFpsTime = std::chrono::steady_clock::now();
 
-    IDirect3DTexture8* OverlayMenu::s_pFontTexture = nullptr;
+    IDirect3DTexture9* OverlayMenu::s_pFontTexture = nullptr;
     std::vector<std::string> OverlayMenu::s_categories = { "PLAYER", "VEHICLE", "WORLD", "VISUAL/GAME" };
 
     void OverlayMenu::Init()
@@ -23,13 +23,13 @@ namespace ReLCS
         s_lastFpsTime = std::chrono::steady_clock::now();
     }
 
-    void OverlayMenu::CreateFontTexture(IDirect3DDevice8* pDevice)
+    void OverlayMenu::CreateFontTexture(IDirect3DDevice9* pDevice)
     {
         if (s_pFontTexture || !pDevice)
             return;
 
         // 128x64 texture fits 16 columns x 6 rows = 96 glyphs (8x8 each)
-        if (FAILED(pDevice->CreateTexture(128, 64, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &s_pFontTexture)))
+        if (FAILED(pDevice->CreateTexture(128, 64, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &s_pFontTexture, nullptr)))
             return;
 
         D3DLOCKED_RECT lr;
@@ -81,7 +81,7 @@ namespace ReLCS
         }
     }
 
-    void OverlayMenu::OnResetDevice(IDirect3DDevice8* pDevice)
+    void OverlayMenu::OnResetDevice(IDirect3DDevice9* pDevice)
     {
         CreateFontTexture(pDevice);
     }
@@ -183,7 +183,7 @@ namespace ReLCS
         lastEsc = currEsc;
     }
 
-    void OverlayMenu::DrawRect(IDirect3DDevice8* pDevice, float x, float y, float w, float h, DWORD color)
+    void OverlayMenu::DrawRect(IDirect3DDevice9* pDevice, float x, float y, float w, float h, DWORD color)
     {
         D3DVertex2D vertices[4] = {
             { x,     y,     0.0f, 1.0f, color, 0.0f, 0.0f },
@@ -201,7 +201,7 @@ namespace ReLCS
         pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(D3DVertex2D));
     }
 
-    void OverlayMenu::DrawTextString(IDirect3DDevice8* pDevice, float x, float y, const std::string& text, DWORD color, float scale)
+    void OverlayMenu::DrawTextString(IDirect3DDevice9* pDevice, float x, float y, const std::string& text, DWORD color, float scale)
     {
         if (!s_pFontTexture)
             CreateFontTexture(pDevice);
@@ -259,7 +259,7 @@ namespace ReLCS
         }
     }
 
-    void OverlayMenu::Render(IDirect3DDevice8* pDevice)
+    void OverlayMenu::Render(IDirect3DDevice9* pDevice)
     {
         if (!pDevice)
             return;
@@ -268,25 +268,25 @@ namespace ReLCS
         HandleInput();
         CheatManager::Update();
 
-        // Backup render states
-        DWORD zEnable, alphaBlend, srcBlend, destBlend, lighting, cullMode, fogEnable;
-        pDevice->GetRenderState(D3DRS_ZENABLE, &zEnable);
-        pDevice->GetRenderState(D3DRS_ALPHABLENDENABLE, &alphaBlend);
-        pDevice->GetRenderState(D3DRS_SRCBLEND, &srcBlend);
-        pDevice->GetRenderState(D3DRS_DESTBLEND, &destBlend);
-        pDevice->GetRenderState(D3DRS_LIGHTING, &lighting);
-        pDevice->GetRenderState(D3DRS_CULLMODE, &cullMode);
-        pDevice->GetRenderState(D3DRS_FOGENABLE, &fogEnable);
+        // Capture full state block to preserve all RenderStates and Shaders
+        IDirect3DStateBlock9* pStateBlock = nullptr;
+        if (FAILED(pDevice->CreateStateBlock(D3DSBT_ALL, &pStateBlock)))
+            return;
 
-        pDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
+        pStateBlock->Capture();
+
+        // Configure rendering state for 2D UI
+        pDevice->SetVertexShader(nullptr);
+        pDevice->SetPixelShader(nullptr);
+        pDevice->SetFVF(D3DFVF_VERTEX2D);
+
+        pDevice->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
         pDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
         pDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
         pDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
         pDevice->SetRenderState(D3DRS_LIGHTING, FALSE);
         pDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
         pDevice->SetRenderState(D3DRS_FOGENABLE, FALSE);
-
-        pDevice->SetVertexShader(D3DFVF_VERTEX2D);
 
         // 1. Draw FPS Counter (if enabled)
         if (s_bShowFps)
@@ -420,13 +420,8 @@ namespace ReLCS
                 "[UP/DN] Navigate  [LEFT/RT] Tab  [ENTER] Apply  [ESC] Close", 0xFF94A3B8, 1.05f);
         }
 
-        // Restore render states
-        pDevice->SetRenderState(D3DRS_ZENABLE, zEnable);
-        pDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, alphaBlend);
-        pDevice->SetRenderState(D3DRS_SRCBLEND, srcBlend);
-        pDevice->SetRenderState(D3DRS_DESTBLEND, destBlend);
-        pDevice->SetRenderState(D3DRS_LIGHTING, lighting);
-        pDevice->SetRenderState(D3DRS_CULLMODE, cullMode);
-        pDevice->SetRenderState(D3DRS_FOGENABLE, fogEnable);
+        // Apply and release state block to restore original game graphics pipeline
+        pStateBlock->Apply();
+        pStateBlock->Release();
     }
 }

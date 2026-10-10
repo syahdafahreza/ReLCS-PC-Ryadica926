@@ -14,7 +14,7 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 
-#include "../include/dxsdk/d3d8.h"
+#include "../include/dxsdk/d3d9.h"
 
 #include <string>
 #include <vector>

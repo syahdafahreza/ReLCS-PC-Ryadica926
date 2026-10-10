@@ -19,9 +19,9 @@ namespace ReLCS
     public:
         static void Init();
         static void HandleInput();
-        static void Render(IDirect3DDevice8* pDevice);
+        static void Render(IDirect3DDevice9* pDevice);
         static void OnLostDevice();
-        static void OnResetDevice(IDirect3DDevice8* pDevice);
+        static void OnResetDevice(IDirect3DDevice9* pDevice);
 
         static bool IsVisible() { return s_bVisible; }
         static void ToggleVisibility() { s_bVisible = !s_bVisible; }
@@ -30,9 +30,9 @@ namespace ReLCS
         static void ToggleFpsCounter() { s_bShowFps = !s_bShowFps; }
 
     private:
-        static void CreateFontTexture(IDirect3DDevice8* pDevice);
-        static void DrawRect(IDirect3DDevice8* pDevice, float x, float y, float w, float h, DWORD color);
-        static void DrawTextString(IDirect3DDevice8* pDevice, float x, float y, const std::string& text, DWORD color, float scale = 1.0f);
+        static void CreateFontTexture(IDirect3DDevice9* pDevice);
+        static void DrawRect(IDirect3DDevice9* pDevice, float x, float y, float w, float h, DWORD color);
+        static void DrawTextString(IDirect3DDevice9* pDevice, float x, float y, const std::string& text, DWORD color, float scale = 1.0f);
         static void UpdateFps();
 
         static bool s_bVisible;
@@ -43,7 +43,7 @@ namespace ReLCS
         static int s_frameCount;
         static std::chrono::steady_clock::time_point s_lastFpsTime;
 
-        static IDirect3DTexture8* s_pFontTexture;
+        static IDirect3DTexture9* s_pFontTexture;
         static std::vector<std::string> s_categories;
     };
 }
