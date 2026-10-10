@@ -172,18 +172,139 @@ namespace ReLCS
         }
     }
 
+    static void __cdecl Hook_PositionAndAddVehicle(void* pVeh, int modelId)
+    {
+        if (!pVeh) return;
+
+        __try
+        {
+            const uintptr_t pPlayerInfo = 0x94AD28;
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (!pPed)
+            {
+                reinterpret_cast<void(__cdecl*)(void*)>(0x4DB3F0)(pVeh);
+                return;
+            }
+
+            // 1. Read player position from CPlaceable at ped + 0x34..0x3C
+            float px = *reinterpret_cast<float*>(pPed + 0x34);
+            float py = *reinterpret_cast<float*>(pPed + 0x38);
+            float pz = *reinterpret_cast<float*>(pPed + 0x3C);
+
+            // Forward facing vector from ped matrix at ped + 0x14..0x18
+            float fx = *reinterpret_cast<float*>(pPed + 0x14);
+            float fy = *reinterpret_cast<float*>(pPed + 0x18);
+
+            // Normalize 2D forward vector
+            float len = sqrtf(fx * fx + fy * fy);
+            float dir_x = (len > 0.001f) ? (fx / len) : 0.0f;
+            float dir_y = (len > 0.001f) ? (fy / len) : 1.0f;
+
+            // 2. Determine distance based on player state & vehicle class (matching cleo-ios)
+            uintptr_t inVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
+            bool isBoat = (modelId >= 192 && modelId <= 196);
+            bool isBike = (modelId >= 202 && modelId <= 210) || (modelId == 225);
+
+            float dist = 5.0f;
+            if (inVeh)
+            {
+                dist = 8.5f;
+            }
+            else if (modelId == 162 || modelId == 139 || modelId == 163 || modelId == 161 || modelId == 165 || modelId == 213)
+            {
+                dist = 8.5f; // Large vehicles (Rhino, Trashmaster, Barracks, Bus, Coach, Hunter)
+            }
+            else if (isBoat)
+            {
+                dist = 10.0f;
+            }
+            else if (isBike)
+            {
+                dist = 3.5f;
+            }
+
+            float spawn_x = px + dir_x * dist;
+            float spawn_y = py + dir_y * dist;
+
+            // 3. Query ground elevation via CWorld::FindGroundZForCoord (0x4D5540)
+            typedef float(__cdecl* FindGroundZFn_t)(float, float);
+            float ground_z = reinterpret_cast<FindGroundZFn_t>(0x4D5540)(spawn_x, spawn_y);
+
+            float base_z = pz;
+            if (ground_z > -50.0f && fabsf(ground_z - pz) < 10.0f)
+            {
+                base_z = ground_z;
+            }
+
+            // 4. Calculate heading angle in radians: in GTA coordinate system (forward.x = -sin(heading), forward.y = cos(heading))
+            float heading = atan2f(-dir_x, dir_y);
+            // Rotate vehicle 90 degrees sideways so player stands directly in front of the driver seat (left door)
+            // Exactly matches CLEO-iOS Vice City / III implementation: heading + FRAC_PI_2
+            float veh_heading = heading + 1.57079632679f;
+
+            // 5. Apply rotation to vehicle placeable matrix via CMatrix::SetRotate at 0x4DF240
+            typedef void(__thiscall* SetRotateFn_t)(void*, float, float, float);
+            reinterpret_cast<SetRotateFn_t>(0x4DF240)(
+                reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pVeh) + 0x04),
+                0.0f,
+                0.0f,
+                veh_heading
+            );
+
+            // 6. Set vehicle coordinates into placeable matrix translation vector (veh + 0x34..0x3C)
+            float spawn_z = base_z + (isBike ? 0.35f : (isBoat ? 0.0f : 0.6f));
+            *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x34) = spawn_x;
+            *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x38) = spawn_y;
+            *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x3C) = spawn_z;
+
+            // 7. Synchronize RenderWare frame hierarchy (CEntity::UpdateRwFrame at 0x4896C0)
+            typedef void(__thiscall* UpdateRwFrameFn_t)(void*);
+            reinterpret_cast<UpdateRwFrameFn_t>(0x4896C0)(pVeh);
+
+            // 8. Configure status flags (STATUS_PLAYER = 0x20) and unlocked doors
+            uint8_t* pStatus = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x50);
+            *pStatus = (*pStatus & 7) | 0x20;
+
+            *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x230) = 1; // Door lock = CARLOCK_UNLOCKED
+
+            // 9. Add vehicle entity to CWorld at 0x4DB3F0
+            typedef void(__cdecl* WorldAddFn_t)(void*);
+            reinterpret_cast<WorldAddFn_t>(0x4DB3F0)(pVeh);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            __try
+            {
+                reinterpret_cast<void(__cdecl*)(void*)>(0x4DB3F0)(pVeh);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+    }
+
     static void InstallVehicleSpawnHook()
     {
         static bool s_installed = false;
         if (s_installed) return;
 
         DWORD oldProtect = 0;
-        void* targetAddr = reinterpret_cast<void*>(0x4AE9B2);
-        const size_t patchSize = 29; // 0x4AE9CF - 0x4AE9B2
 
-        if (VirtualProtect(targetAddr, patchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+        // Hook 1: NOP the jl 0x4aeaa2 check at 0x4AE9AC (6 bytes: 0F 8C F0 00 00 00)
+        // This ensures the spawner never fails if parking space nodes are not found nearby.
+        void* pCheckAddr = reinterpret_cast<void*>(0x4AE9AC);
+        if (VirtualProtect(pCheckAddr, 6, PAGE_EXECUTE_READWRITE, &oldProtect))
         {
-            uint8_t* p = reinterpret_cast<uint8_t*>(targetAddr);
+            memset(pCheckAddr, 0x90, 6);
+            VirtualProtect(pCheckAddr, 6, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pCheckAddr, 6);
+        }
+
+        // Hook 2: Vehicle constructor hook at 0x4AE9B2 (29 bytes up to 0x4AE9CF)
+        // Allocates CBike for motorcycles, CBoat for boats, and CAutomobile for cars.
+        void* pCtorAddr = reinterpret_cast<void*>(0x4AE9B2);
+        const size_t ctorPatchSize = 29;
+        if (VirtualProtect(pCtorAddr, ctorPatchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pCtorAddr);
 
             // 6A 01          - push 1
             p[0] = 0x6A;
@@ -204,16 +325,54 @@ namespace ReLCS
             p[12] = 0xC3;
 
             // Fill remaining bytes up to 0x4AE9CF with NOPs (0x90)
-            for (size_t i = 13; i < patchSize; ++i)
+            for (size_t i = 13; i < ctorPatchSize; ++i)
             {
                 p[i] = 0x90;
             }
 
-            VirtualProtect(targetAddr, patchSize, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), targetAddr, patchSize);
-            s_installed = true;
-            CrashLogger::LogMessage("[CheatManager] Installed vehicle constructor hook at 0x4AE9B2 (CBike/CBoat support enabled).");
+            VirtualProtect(pCtorAddr, ctorPatchSize, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pCtorAddr, ctorPatchSize);
         }
+
+        // Hook 3: Position & Orientation hook at 0x4AEA4F (83 bytes up to 0x4AEAA2)
+        // Repositions the vehicle directly in front of the player, rotated so the driver seat faces Toni!
+        void* pPosAddr = reinterpret_cast<void*>(0x4AEA4F);
+        const size_t posPatchSize = 83;
+        if (VirtualProtect(pPosAddr, posPatchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pPosAddr);
+
+            // 56             - push esi (modelId)
+            p[0] = 0x56;
+            // 53             - push ebx (pVeh)
+            p[1] = 0x53;
+            // E8 xx xx xx xx - call Hook_PositionAndAddVehicle
+            p[2] = 0xE8;
+            uintptr_t callNext = 0x4AEA4F + 2 + 5;
+            int32_t relCall = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_PositionAndAddVehicle) - callNext);
+            *reinterpret_cast<int32_t*>(&p[3]) = relCall;
+            // 83 C4 08       - add esp, 8
+            p[7] = 0x83;
+            p[8] = 0xC4;
+            p[9] = 0x08;
+            // E9 xx xx xx xx - jmp 0x4AEAA2
+            p[10] = 0xE9;
+            uintptr_t jmpNext = 0x4AEA4F + 10 + 5;
+            int32_t relJmp = static_cast<int32_t>(0x4AEAA2 - jmpNext);
+            *reinterpret_cast<int32_t*>(&p[11]) = relJmp;
+
+            // Fill remaining bytes up to 0x4AEAA2 with NOPs (0x90)
+            for (size_t i = 15; i < posPatchSize; ++i)
+            {
+                p[i] = 0x90;
+            }
+
+            VirtualProtect(pPosAddr, posPatchSize, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pPosAddr, posPatchSize);
+        }
+
+        s_installed = true;
+        CrashLogger::LogMessage("[CheatManager] Installed vehicle constructor & driver-facing position hooks (CLEO-iOS style).");
     }
 
     static void SafeSpawnVehicle(int modelId)
