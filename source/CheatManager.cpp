@@ -11,6 +11,7 @@ namespace ReLCS
     std::atomic<bool> CheatManager::s_bInfiniteArmor(false);
     std::atomic<bool> CheatManager::s_bUpsideDown(false);
     std::string CheatManager::s_lastActivatedName = "";
+    std::string CheatManager::s_lastActivatedCategory = "";
     float CheatManager::s_notificationAlpha = 0.0f;
     std::chrono::steady_clock::time_point CheatManager::s_notificationTime;
 
@@ -39,6 +40,60 @@ namespace ReLCS
             { LCSCheat::NeverWanted, "Never Wanted [Toggle]", "Player", "Keeps wanted level permanently at zero", "POLITICALIMUNITY" },
             { LCSCheat::UnlimitedAmmo, "Unlimited Ammo [Toggle]", "Player", "Infinite ammo and no reload for all weapons", "" },
             { LCSCheat::CommitSuicide, "Commit Suicide", "Player", "Instantly eliminates the player character", "KYSMATE" },
+
+            // Weapon Arsenal & Selector
+            { LCSCheat::ClearWeapons, "Clear All Weapons", "Weapon", "Removes all weapons from inventory", "" },
+            { LCSCheat::WeaponSet1, "Weapon Set 1 (Street)", "Weapon", "Knuckles, knife, 9mm, shotgun, Tec-9, Ruger, sniper, Molotov, flame", "TERRORIST" },
+            { LCSCheat::WeaponSet2, "Weapon Set 2 (Tactical)", "Weapon", "Katana, .357 Python, stubby, Uzi, M4, laser sniper, grenade, RPG", "PALETO" },
+            { LCSCheat::WeaponSet3, "Weapon Set 3 (Heavy Rampage)", "Weapon", "Chainsaw, Spas-12, MP5, M60 heavy MG, teargas, minigun", "ICANCU" },
+
+            // Melee (Slot 0 & 1)
+            { static_cast<LCSCheat>(2000 + 1), "Brass Knuckles", "Weapon", "Melee weapon (Slot 0)", "", 0, 1 },
+            { static_cast<LCSCheat>(2000 + 2), "Screwdriver", "Weapon", "Melee weapon (Slot 1)", "", 0, 2 },
+            { static_cast<LCSCheat>(2000 + 3), "Golf Club", "Weapon", "Melee weapon (Slot 1)", "", 0, 3 },
+            { static_cast<LCSCheat>(2000 + 4), "Nightstick", "Weapon", "Melee weapon (Slot 1)", "", 0, 4 },
+            { static_cast<LCSCheat>(2000 + 5), "Knife", "Weapon", "Melee weapon (Slot 1)", "", 0, 5 },
+            { static_cast<LCSCheat>(2000 + 6), "Baseball Bat", "Weapon", "Melee weapon (Slot 1)", "", 0, 6 },
+            { static_cast<LCSCheat>(2000 + 7), "Hammer", "Weapon", "Melee weapon (Slot 1)", "", 0, 7 },
+            { static_cast<LCSCheat>(2000 + 8), "Meat Cleaver", "Weapon", "Melee weapon (Slot 1)", "", 0, 8 },
+            { static_cast<LCSCheat>(2000 + 9), "Machete", "Weapon", "Melee weapon (Slot 1)", "", 0, 9 },
+            { static_cast<LCSCheat>(2000 + 10), "Katana", "Weapon", "Melee weapon (Slot 1)", "", 0, 10 },
+            { static_cast<LCSCheat>(2000 + 11), "Chainsaw", "Weapon", "Melee weapon (Slot 1)", "", 0, 11 },
+
+            // Handguns (Slot 3)
+            { static_cast<LCSCheat>(2000 + 17), "Pistol (Colt .45)", "Weapon", "Handgun with 99999 ammo (Slot 3)", "", 0, 17 },
+            { static_cast<LCSCheat>(2000 + 18), ".357 Python", "Weapon", "High-caliber revolver with 99999 ammo (Slot 3)", "", 0, 18 },
+
+            // Shotguns (Slot 4)
+            { static_cast<LCSCheat>(2000 + 19), "Chrome Shotgun", "Weapon", "Pump shotgun with 99999 ammo (Slot 4)", "", 0, 19 },
+            { static_cast<LCSCheat>(2000 + 20), "Spas-12 Shotgun", "Weapon", "Combat shotgun with 99999 ammo (Slot 4)", "", 0, 20 },
+            { static_cast<LCSCheat>(2000 + 21), "Stubby Shotgun", "Weapon", "Sawed-off shotgun with 99999 ammo (Slot 4)", "", 0, 21 },
+
+            // Submachine Guns & Rifles (Slot 5 & 6)
+            { static_cast<LCSCheat>(2000 + 22), "Tec-9", "Weapon", "Submachine gun with 99999 ammo (Slot 5)", "", 0, 22 },
+            { static_cast<LCSCheat>(2000 + 23), "Micro-SMG (Uzi)", "Weapon", "Submachine gun with 99999 ammo (Slot 5)", "", 0, 23 },
+            { static_cast<LCSCheat>(2000 + 24), "Silenced Mac-10", "Weapon", "Silenced SMG with 99999 ammo (Slot 5)", "", 0, 24 },
+            { static_cast<LCSCheat>(2000 + 25), "MP5", "Weapon", "Submachine gun with 99999 ammo (Slot 5)", "", 0, 25 },
+            { static_cast<LCSCheat>(2000 + 26), "M4 Assault Rifle", "Weapon", "Assault rifle with 99999 ammo (Slot 6)", "", 0, 26 },
+            { static_cast<LCSCheat>(2000 + 27), "Ruger (AK-47)", "Weapon", "Assault rifle with 99999 ammo (Slot 6)", "", 0, 27 },
+
+            // Heavy Weapons (Slot 7)
+            { static_cast<LCSCheat>(2000 + 30), "Rocket Launcher", "Weapon", "RPG with 99999 rockets (Slot 7)", "", 0, 30 },
+            { static_cast<LCSCheat>(2000 + 31), "Flamethrower", "Weapon", "Incendiary weapon with 99999 fuel (Slot 7)", "", 0, 31 },
+            { static_cast<LCSCheat>(2000 + 32), "M60 Machinegun", "Weapon", "Heavy machinegun with 99999 ammo (Slot 7)", "", 0, 32 },
+            { static_cast<LCSCheat>(2000 + 33), "Minigun", "Weapon", "Rotary minigun with 99999 ammo (Slot 7)", "", 0, 33 },
+
+            // Snipers (Slot 8)
+            { static_cast<LCSCheat>(2000 + 28), "Sniper Rifle", "Weapon", "Bolt-action sniper with 99999 ammo (Slot 8)", "", 0, 28 },
+            { static_cast<LCSCheat>(2000 + 29), "Laser Scope Sniper", "Weapon", "Semi-auto laser sniper with 99999 ammo (Slot 8)", "", 0, 29 },
+
+            // Projectiles & Special (Slot 2 & 9)
+            { static_cast<LCSCheat>(2000 + 12), "Grenade", "Weapon", "Thrown explosive with 99999 count (Slot 2)", "", 0, 12 },
+            { static_cast<LCSCheat>(2000 + 13), "Remote Grenade", "Weapon", "Detonated explosive with 99999 count (Slot 2)", "", 0, 13 },
+            { static_cast<LCSCheat>(2000 + 14), "Tear Gas", "Weapon", "Gas grenade with 99999 count (Slot 2)", "", 0, 14 },
+            { static_cast<LCSCheat>(2000 + 15), "Molotov Cocktail", "Weapon", "Incendiary grenade with 99999 count (Slot 2)", "", 0, 15 },
+            { static_cast<LCSCheat>(2000 + 34), "Detonator", "Weapon", "Bomb detonator with 99999 count (Slot 9)", "", 0, 34 },
+            { static_cast<LCSCheat>(2000 + 36), "Camera", "Weapon", "Camera device (Slot 9)", "", 0, 36 },
 
             // Vehicle Cheats & Spawners
             { static_cast<LCSCheat>(1000 + 130), "Deimos SP", "Vehicle", "Spawns Deimos SP (car)", "", 130 },
@@ -592,6 +647,70 @@ namespace ReLCS
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 
+    static int GetWeaponSlot(int weaponType)
+    {
+        switch (weaponType)
+        {
+        case 1:  return 0; // Brass Knuckles
+        case 2: case 3: case 4: case 5: case 6:
+        case 7: case 8: case 9: case 10: case 11:
+            return 1; // Melee
+        case 12: case 13: case 14: case 15:
+            return 2; // Projectiles
+        case 17: case 18:
+            return 3; // Handguns
+        case 19: case 20: case 21:
+            return 4; // Shotguns
+        case 22: case 23: case 24: case 25:
+            return 5; // SMGs
+        case 26: case 27:
+            return 6; // Rifles
+        case 30: case 31: case 32: case 33:
+            return 7; // Heavy
+        case 28: case 29:
+            return 8; // Sniper
+        case 34: case 36:
+            return 9; // Special (Detonator, Camera)
+        default:
+            return -1;
+        }
+    }
+
+    static void SafeGiveSingleWeapon(uintptr_t pPlayerInfo, int weaponType)
+    {
+        __try
+        {
+            if (!pPlayerInfo) return;
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (!pPed || weaponType <= 0) return;
+
+            int slot = GetWeaponSlot(weaponType);
+            if (slot >= 0 && slot < 10)
+            {
+                // Clear existing weapon in this slot so it cleanly replaces whatever was in the slot
+                uintptr_t pWp = pPed + 0x408 + (slot * 0x18);
+                *reinterpret_cast<int*>(pWp + 0x00) = 0; // WEAPONTYPE_UNARMED
+                *reinterpret_cast<int*>(pWp + 0x04) = 0; // WEAPONSTATE_READY
+                *reinterpret_cast<int*>(pWp + 0x08) = 0; // m_nAmmoInClip
+                *reinterpret_cast<int*>(pWp + 0x0C) = 0; // m_nAmmoTotal
+            }
+
+            int ammoCount = (slot == 0 || slot == 1) ? 1 : 99999;
+            typedef void(__thiscall* GiveWeaponFn_t)(void*, int, unsigned int, bool);
+            GiveWeaponFn_t pfnGiveWeapon = reinterpret_cast<GiveWeaponFn_t>(0x4FFA30);
+            pfnGiveWeapon(reinterpret_cast<void*>(pPed), weaponType, static_cast<unsigned int>(ammoCount), true);
+
+            // Directly guarantee massive ammo in slot
+            if (slot >= 0 && slot < 10 && slot != 0 && slot != 1)
+            {
+                uintptr_t pWp = pPed + 0x408 + (slot * 0x18);
+                *reinterpret_cast<int*>(pWp + 0x08) = 9999;  // m_nAmmoInClip
+                *reinterpret_cast<int*>(pWp + 0x0C) = 99999; // m_nAmmoTotal
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
     static void SafeGiveWeapon(uintptr_t pPed, int weaponType, int ammo)
     {
         __try
@@ -821,9 +940,18 @@ namespace ReLCS
             SafeSetHealth(pPlayerInfo, 0.0f);
             break;
 
+        case LCSCheat::ClearWeapons:
+            SafeClearWeapons(*reinterpret_cast<uintptr_t*>(pPlayerInfo));
+            break;
+
         default:
+            // Check if weapon selector
+            if (info->weaponTypeId > 0)
+            {
+                SafeGiveSingleWeapon(pPlayerInfo, info->weaponTypeId);
+            }
             // Check if vehicle spawner
-            if (info->vehicleModelId > 0)
+            else if (info->vehicleModelId > 0)
             {
                 SafeSpawnVehicle(info->vehicleModelId);
             }
@@ -835,6 +963,7 @@ namespace ReLCS
         }
 
         s_lastActivatedName = info->name;
+        s_lastActivatedCategory = info->category;
         s_notificationAlpha = 1.0f;
         s_notificationTime = std::chrono::steady_clock::now();
 

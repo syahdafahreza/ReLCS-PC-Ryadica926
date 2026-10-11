@@ -20,6 +20,7 @@ namespace ReLCS
         NeverWanted,
         UnlimitedAmmo,
         CommitSuicide,
+        ClearWeapons,
 
         // Vehicle Cheats & Spawners
         SpawnRhino,
@@ -90,6 +91,7 @@ namespace ReLCS
         std::string description;
         std::string codeString;
         int vehicleModelId = 0;
+        int weaponTypeId = 0;
     };
 
     class CheatManager
@@ -108,6 +110,7 @@ namespace ReLCS
         static bool IsInfiniteArmorEnabled() { return s_bInfiniteArmor; }
         static bool IsUpsideDownEnabled() { return s_bUpsideDown; }
         static const std::string& GetLastActivatedCheatName() { return s_lastActivatedName; }
+        static const std::string& GetLastActivatedCategory() { return s_lastActivatedCategory; }
         static float GetNotificationAlpha() { return s_notificationAlpha; }
 
     private:
@@ -121,6 +124,7 @@ namespace ReLCS
         static std::atomic<bool> s_bInfiniteArmor;
         static std::atomic<bool> s_bUpsideDown;
         static std::string s_lastActivatedName;
+        static std::string s_lastActivatedCategory;
         static float s_notificationAlpha;
         static std::chrono::steady_clock::time_point s_notificationTime;
 

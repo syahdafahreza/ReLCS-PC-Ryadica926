@@ -31,6 +31,9 @@ namespace ReLCS
         static void ToggleFpsCounter() { s_bShowFps = !s_bShowFps; }
 
         static std::vector<CheatInfo> GetCheatsForCategory(int categoryIndex);
+        static void SetWeaponFilter(int filterIndex);
+        static int GetWeaponFilter() { return s_weaponFilter; }
+        static void CycleWeaponFilter(int direction = 1);
         static void SetVehicleFilter(int filterIndex);
         static int GetVehicleFilter() { return s_vehicleFilter; }
         static void CycleVehicleFilter(int direction = 1);
@@ -52,6 +55,8 @@ namespace ReLCS
 
         static IDirect3DTexture9* s_pFontTexture;
         static std::vector<std::string> s_categories;
+        static int s_weaponFilter;
+        static std::vector<std::string> s_weaponFilterNames;
         static int s_vehicleFilter;
         static std::vector<std::string> s_vehicleFilterNames;
     };

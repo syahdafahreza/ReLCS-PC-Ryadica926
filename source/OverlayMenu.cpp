@@ -14,7 +14,11 @@ namespace ReLCS
     std::chrono::steady_clock::time_point OverlayMenu::s_lastFpsTime = std::chrono::steady_clock::now();
 
     IDirect3DTexture9* OverlayMenu::s_pFontTexture = nullptr;
-    std::vector<std::string> OverlayMenu::s_categories = { "PLAYER", "VEHICLE", "WORLD", "VISUAL/GAME" };
+    std::vector<std::string> OverlayMenu::s_categories = { "PLAYER", "WEAPON", "VEHICLE", "WORLD", "VISUAL" };
+    int OverlayMenu::s_weaponFilter = 0;
+    std::vector<std::string> OverlayMenu::s_weaponFilterNames = {
+        "ALL", "MELEE", "HANDGUN", "SHOTGUN", "SMG/RIF", "HEAVY"
+    };
     int OverlayMenu::s_vehicleFilter = 0;
     std::vector<std::string> OverlayMenu::s_vehicleFilterNames = {
         "ALL", "CARS", "BIKES", "BOATS", "PLANES", "CHEATS"
@@ -27,6 +31,7 @@ namespace ReLCS
         s_activeCategory = 0;
         s_selectedIndex = 0;
         s_scrollOffset = 0;
+        s_weaponFilter = 0;
         s_vehicleFilter = 0;
         s_lastFpsTime = std::chrono::steady_clock::now();
     }
@@ -44,6 +49,48 @@ namespace ReLCS
         {
             while (ShowCursor(FALSE) >= 0);
         }
+    }
+
+    enum WeaponSubCategory
+    {
+        WEAP_SUB_ALL = 0,
+        WEAP_SUB_MELEE = 1,
+        WEAP_SUB_HANDGUN = 2,
+        WEAP_SUB_SHOTGUN = 3,
+        WEAP_SUB_SMG_RIFLE = 4,
+        WEAP_SUB_HEAVY_EXP = 5
+    };
+
+    static WeaponSubCategory ClassifyWeapon(const CheatInfo& c)
+    {
+        int id = c.weaponTypeId;
+        if (id >= 1 && id <= 11)
+            return WEAP_SUB_MELEE;
+        if (id == 17 || id == 18)
+            return WEAP_SUB_HANDGUN;
+        if (id >= 19 && id <= 21)
+            return WEAP_SUB_SHOTGUN;
+        if ((id >= 22 && id <= 25) || id == 26 || id == 27)
+            return WEAP_SUB_SMG_RIFLE;
+        return WEAP_SUB_HEAVY_EXP;
+    }
+
+    void OverlayMenu::SetWeaponFilter(int filterIndex)
+    {
+        if (filterIndex >= 0 && filterIndex < static_cast<int>(s_weaponFilterNames.size()))
+        {
+            s_weaponFilter = filterIndex;
+            s_selectedIndex = 0;
+            s_scrollOffset = 0;
+        }
+    }
+
+    void OverlayMenu::CycleWeaponFilter(int direction)
+    {
+        int count = static_cast<int>(s_weaponFilterNames.size());
+        s_weaponFilter = (s_weaponFilter + direction + count) % count;
+        s_selectedIndex = 0;
+        s_scrollOffset = 0;
     }
 
     enum VehicleSubCategory
@@ -113,9 +160,10 @@ namespace ReLCS
         switch (categoryIndex)
         {
         case 0: targetCat = "Player"; break;
-        case 1: targetCat = "Vehicle"; break;
-        case 2: targetCat = "World"; break;
-        case 3: targetCat = "Visual/Gameplay"; break;
+        case 1: targetCat = "Weapon"; break;
+        case 2: targetCat = "Vehicle"; break;
+        case 3: targetCat = "World"; break;
+        case 4: targetCat = "Visual/Gameplay"; break;
         default: break;
         }
 
@@ -123,7 +171,13 @@ namespace ReLCS
         {
             if (cheat.category == targetCat)
             {
-                if (categoryIndex == 1 && s_vehicleFilter != VEH_SUB_ALL)
+                if (categoryIndex == 1 && s_weaponFilter != WEAP_SUB_ALL)
+                {
+                    WeaponSubCategory sub = ClassifyWeapon(cheat);
+                    if (sub != static_cast<WeaponSubCategory>(s_weaponFilter))
+                        continue;
+                }
+                else if (categoryIndex == 2 && s_vehicleFilter != VEH_SUB_ALL)
                 {
                     VehicleSubCategory sub = ClassifyVehicle(cheat);
                     if (sub != static_cast<VehicleSubCategory>(s_vehicleFilter))
@@ -204,7 +258,31 @@ namespace ReLCS
         if (!s_bVisible)
             return;
 
-        if (s_activeCategory == 1) // VEHICLE category
+        if (s_activeCategory == 1) // WEAPON category
+        {
+            if (vk == VK_TAB)
+            {
+                CycleWeaponFilter((GetAsyncKeyState(VK_SHIFT) & 0x8000) ? -1 : 1);
+                return;
+            }
+            else if (vk == 'Q' || vk == 'q' || vk == VK_OEM_4)
+            {
+                CycleWeaponFilter(-1);
+                return;
+            }
+            else if (vk == 'E' || vk == 'e' || vk == VK_OEM_6)
+            {
+                CycleWeaponFilter(1);
+                return;
+            }
+            else if (vk == '1' || vk == VK_NUMPAD1) { SetWeaponFilter(0); return; }
+            else if (vk == '2' || vk == VK_NUMPAD2) { SetWeaponFilter(1); return; }
+            else if (vk == '3' || vk == VK_NUMPAD3) { SetWeaponFilter(2); return; }
+            else if (vk == '4' || vk == VK_NUMPAD4) { SetWeaponFilter(3); return; }
+            else if (vk == '5' || vk == VK_NUMPAD5) { SetWeaponFilter(4); return; }
+            else if (vk == '6' || vk == VK_NUMPAD6) { SetWeaponFilter(5); return; }
+        }
+        else if (s_activeCategory == 2) // VEHICLE category
         {
             if (vk == VK_TAB)
             {
@@ -231,20 +309,20 @@ namespace ReLCS
 
         std::vector<CheatInfo> currentCategoryCheats = GetCheatsForCategory(s_activeCategory);
         int totalItems = static_cast<int>(currentCategoryCheats.size());
-        if (s_activeCategory == 3)
+        if (s_activeCategory == 4)
             totalItems += 1; // FPS counter toggle
 
-        const int MAX_VISIBLE_ROWS = (s_activeCategory == 1) ? 11 : 12;
+        const int MAX_VISIBLE_ROWS = (s_activeCategory == 1 || s_activeCategory == 2) ? 11 : 12;
 
         if (vk == VK_LEFT)
         {
-            s_activeCategory = (s_activeCategory - 1 + 4) % 4;
+            s_activeCategory = (s_activeCategory - 1 + 5) % 5;
             s_selectedIndex = 0;
             s_scrollOffset = 0;
         }
         else if (vk == VK_RIGHT)
         {
-            s_activeCategory = (s_activeCategory + 1) % 4;
+            s_activeCategory = (s_activeCategory + 1) % 5;
             s_selectedIndex = 0;
             s_scrollOffset = 0;
         }
@@ -276,7 +354,7 @@ namespace ReLCS
         }
         else if (vk == VK_RETURN)
         {
-            if (s_activeCategory == 3 && s_selectedIndex == totalItems - 1)
+            if (s_activeCategory == 4 && s_selectedIndex == totalItems - 1)
             {
                 s_bShowFps = !s_bShowFps;
             }
@@ -424,7 +502,7 @@ namespace ReLCS
             s_lastToggleTime = now;
         }
 
-        if (s_activeCategory == 1)
+        if (s_activeCategory == 1 || s_activeCategory == 2)
         {
             if (currTab && !s_lastTab) OnMenuKeyDown(VK_TAB);
             if (currQ && !s_lastQ) OnMenuKeyDown('Q');
@@ -461,13 +539,13 @@ namespace ReLCS
                     const float menuY = 45.0f;
                     const float menuW = 460.0f;
 
-                    // Main Category Tabs
+                    // Main Category Tabs (5 tabs)
                     float tabY = menuY + 40.0f;
-                    float tabW = menuW / 4.0f;
+                    float tabW = menuW / 5.0f;
                     if (my >= tabY && my <= tabY + 24.0f && mx >= menuX && mx <= menuX + menuW)
                     {
                         int clickedCat = static_cast<int>((mx - menuX) / tabW);
-                        if (clickedCat >= 0 && clickedCat < 4)
+                        if (clickedCat >= 0 && clickedCat < 5)
                         {
                             s_activeCategory = clickedCat;
                             s_selectedIndex = 0;
@@ -475,8 +553,8 @@ namespace ReLCS
                         }
                     }
 
-                    // Vehicle Filter Pills (when in Vehicle tab)
-                    if (s_activeCategory == 1)
+                    // Subcategory Filter Pills (when in Weapon or Vehicle tab)
+                    if (s_activeCategory == 1 || s_activeCategory == 2)
                     {
                         float filterY = tabY + 28.0f;
                         float fW = (menuW - 16.0f) / 6.0f;
@@ -485,7 +563,10 @@ namespace ReLCS
                             int clickedFilter = static_cast<int>((mx - (menuX + 8.0f)) / fW);
                             if (clickedFilter >= 0 && clickedFilter < 6)
                             {
-                                SetVehicleFilter(clickedFilter);
+                                if (s_activeCategory == 1)
+                                    SetWeaponFilter(clickedFilter);
+                                else
+                                    SetVehicleFilter(clickedFilter);
                             }
                         }
                     }
@@ -560,10 +641,10 @@ namespace ReLCS
             DrawTextString(pDevice, menuX + 16.0f, menuY + 11.0f, "ReLCS-Cleo v1.0", 0xFF60A5FA, 1.5f);
             DrawTextString(pDevice, menuX + menuW - 130.0f, menuY + 13.0f, "[F9] HIDE", 0xFF94A3B8, 1.1f);
 
-            // Category Tab Bar
+            // Category Tab Bar (5 tabs)
             float tabY = menuY + 40.0f;
-            float tabW = menuW / 4.0f;
-            for (int i = 0; i < 4; i++)
+            float tabW = menuW / 5.0f;
+            for (int i = 0; i < 5; i++)
             {
                 float tX = menuX + (i * tabW);
                 bool isActive = (i == s_activeCategory);
@@ -571,26 +652,29 @@ namespace ReLCS
                 DWORD tabTextColor = isActive ? 0xFFFFFFFF : 0xFF94A3B8;
 
                 DrawRect(pDevice, tX + 2.0f, tabY, tabW - 4.0f, 24.0f, tabBg);
-                DrawTextString(pDevice, tX + 8.0f, tabY + 7.0f, s_categories[i], tabTextColor, 1.0f);
+                DrawTextString(pDevice, tX + 6.0f, tabY + 7.0f, s_categories[i], tabTextColor, 1.0f);
             }
 
-            // Subcategory Filter Pills (Live filter bar when VEHICLE tab is active)
+            // Subcategory Filter Pills (Live filter bar when WEAPON or VEHICLE tab is active)
             float filterY = tabY + 28.0f;
-            if (s_activeCategory == 1)
+            if (s_activeCategory == 1 || s_activeCategory == 2)
             {
                 float fW = (menuW - 16.0f) / 6.0f;
+                const auto& filterNames = (s_activeCategory == 1) ? s_weaponFilterNames : s_vehicleFilterNames;
+                int currentFilter = (s_activeCategory == 1) ? s_weaponFilter : s_vehicleFilter;
+
                 for (int j = 0; j < 6; j++)
                 {
                     float fX = menuX + 8.0f + (j * fW);
-                    bool isFilterActive = (j == s_vehicleFilter);
+                    bool isFilterActive = (j == currentFilter);
                     DWORD pBg = isFilterActive ? 0xFF0284C7 : 0xFF1E293B;
                     DWORD pTextColor = isFilterActive ? 0xFFFFFFFF : 0xFF94A3B8;
 
                     DrawRect(pDevice, fX + 1.0f, filterY, fW - 2.0f, 20.0f, pBg);
 
-                    float textW = s_vehicleFilterNames[j].length() * 8.0f * 0.95f;
+                    float textW = filterNames[j].length() * 8.0f * 0.95f;
                     float textX = fX + (fW - textW) / 2.0f;
-                    DrawTextString(pDevice, textX, filterY + 5.0f, s_vehicleFilterNames[j], pTextColor, 0.95f);
+                    DrawTextString(pDevice, textX, filterY + 5.0f, filterNames[j], pTextColor, 0.95f);
                 }
             }
 
@@ -598,10 +682,10 @@ namespace ReLCS
             std::vector<CheatInfo> curCheats = GetCheatsForCategory(s_activeCategory);
 
             int totalRows = static_cast<int>(curCheats.size());
-            if (s_activeCategory == 3)
+            if (s_activeCategory == 4)
                 totalRows += 1; // FPS counter item
 
-            const int MAX_VISIBLE_ROWS = (s_activeCategory == 1) ? 11 : 12;
+            const int MAX_VISIBLE_ROWS = (s_activeCategory == 1 || s_activeCategory == 2) ? 11 : 12;
             if (s_scrollOffset < 0) s_scrollOffset = 0;
             if (s_scrollOffset >= totalRows && totalRows > 0) s_scrollOffset = totalRows - 1;
 
@@ -609,7 +693,7 @@ namespace ReLCS
             int countToDraw = (std::min)(MAX_VISIBLE_ROWS, totalRows - firstVisible);
             if (countToDraw < 0) countToDraw = 0;
 
-            float itemStartY = (s_activeCategory == 1) ? (filterY + 25.0f) : (tabY + 34.0f);
+            float itemStartY = (s_activeCategory == 1 || s_activeCategory == 2) ? (filterY + 25.0f) : (tabY + 34.0f);
             float rowH = 26.0f;
 
             for (int k = 0; k < countToDraw; k++)
@@ -627,7 +711,7 @@ namespace ReLCS
                     DrawRect(pDevice, menuX + 8.0f, rowY - 2.0f, menuW - 16.0f, rowH - 2.0f, 0x22FFFFFF);
                 }
 
-                if (s_activeCategory == 3 && i == totalRows - 1)
+                if (s_activeCategory == 4 && i == totalRows - 1)
                 {
                     // FPS counter item
                     DrawTextString(pDevice, menuX + 20.0f, rowY + 3.0f, "Toggle FPS Counter", isSelected ? 0xFFFFFFFF : 0xFFE2E8F0, 1.2f);
@@ -643,7 +727,30 @@ namespace ReLCS
                     std::string tag = "";
                     DWORD tagColor = 0xFF60A5FA;
 
-                    if (item.id == LCSCheat::NeverWanted)
+                    if (item.weaponTypeId > 0)
+                    {
+                        int slot = -1;
+                        int wid = item.weaponTypeId;
+                        if (wid == 1) slot = 0;
+                        else if (wid >= 2 && wid <= 11) slot = 1;
+                        else if (wid >= 12 && wid <= 15) slot = 2;
+                        else if (wid == 17 || wid == 18) slot = 3;
+                        else if (wid >= 19 && wid <= 21) slot = 4;
+                        else if (wid >= 22 && wid <= 25) slot = 5;
+                        else if (wid == 26 || wid == 27) slot = 6;
+                        else if (wid >= 30 && wid <= 33) slot = 7;
+                        else if (wid == 28 || wid == 29) slot = 8;
+                        else if (wid == 34 || wid == 36) slot = 9;
+
+                        if (slot >= 0)
+                        {
+                            char slotBuf[24];
+                            snprintf(slotBuf, sizeof(slotBuf), "[SLOT %d]", slot);
+                            tag = slotBuf;
+                            tagColor = 0xFF38BDF8;
+                        }
+                    }
+                    else if (item.id == LCSCheat::NeverWanted)
                     {
                         tag = CheatManager::IsNeverWantedEnabled() ? "[ACTIVE]" : "[OFF]";
                         tagColor = CheatManager::IsNeverWantedEnabled() ? 0xFF10B981 : 0xFF94A3B8;
@@ -698,6 +805,11 @@ namespace ReLCS
             if (s_activeCategory == 1)
             {
                 DrawTextString(pDevice, menuX + 14.0f, footerY + 8.0f,
+                    "[TAB/Q/E/1-6] Filter  [UP/DN] Move  [ENTER] Equip", 0xFF94A3B8, 0.95f);
+            }
+            else if (s_activeCategory == 2)
+            {
+                DrawTextString(pDevice, menuX + 14.0f, footerY + 8.0f,
                     "[TAB/Q/E/1-6] Filter  [UP/DN] Move  [ENTER] Spawn", 0xFF94A3B8, 0.95f);
             }
             else
@@ -720,7 +832,13 @@ namespace ReLCS
             DWORD bannerText = (a << 24) | 0x00F8FAFC;
             DWORD bannerAccent = (a << 24) | 0x003B82F6; // Blue border
 
-            std::string notifStr = "[ CHEAT ACTIVATED: " + CheatManager::GetLastActivatedCheatName() + " ]";
+            std::string notifStr;
+            if (CheatManager::GetLastActivatedCategory() == "Weapon")
+                notifStr = "[ WEAPON EQUIPPED: " + CheatManager::GetLastActivatedCheatName() + " ]";
+            else if (CheatManager::GetLastActivatedCategory() == "Vehicle")
+                notifStr = "[ VEHICLE SPAWNED: " + CheatManager::GetLastActivatedCheatName() + " ]";
+            else
+                notifStr = "[ CHEAT ACTIVATED: " + CheatManager::GetLastActivatedCheatName() + " ]";
             float bannerW = (notifStr.length() * 10.0f) + 40.0f;
 
             D3DVIEWPORT9 vp;
