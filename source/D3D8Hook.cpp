@@ -53,15 +53,9 @@ namespace ReLCS
     {
         if (uMsg == WM_KEYDOWN)
         {
-            if (wParam == VK_F9)
+            if (wParam == VK_F9 || wParam == VK_F10)
             {
-                OverlayMenu::ToggleVisibility();
-                return 0; // Consume F9
-            }
-            if (wParam == VK_F10)
-            {
-                OverlayMenu::ToggleFpsCounter();
-                return 0; // Consume F10
+                return 0; // Consume F9 and F10 so game doesn't receive them (handled in HandleInput)
             }
 
             if (OverlayMenu::IsVisible())

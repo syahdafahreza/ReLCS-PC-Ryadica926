@@ -275,13 +275,19 @@ namespace ReLCS
         static bool s_lastRight = false;
         static bool s_lastEnter = false;
         static bool s_lastEsc = false;
+        static auto s_lastToggleTime = std::chrono::steady_clock::now();
+
+        auto now = std::chrono::steady_clock::now();
+        int64_t msSinceToggle = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastToggleTime).count();
 
         bool currF9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
         bool currF10 = (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
 
-        if (currF9 && !s_lastF9)
+        // Toggle visibility only on fresh key down with minimum 250ms cooldown to avoid accidental double toggles
+        if (currF9 && !s_lastF9 && msSinceToggle > 250)
         {
             ToggleVisibility();
+            s_lastToggleTime = now;
         }
         s_lastF9 = currF9;
 
@@ -306,7 +312,11 @@ namespace ReLCS
         if (currLeft && !s_lastLeft) OnMenuKeyDown(VK_LEFT);
         if (currRight && !s_lastRight) OnMenuKeyDown(VK_RIGHT);
         if (currEnter && !s_lastEnter) OnMenuKeyDown(VK_RETURN);
-        if (currEsc && !s_lastEsc) ToggleVisibility();
+        if (currEsc && !s_lastEsc && msSinceToggle > 250)
+        {
+            ToggleVisibility();
+            s_lastToggleTime = now;
+        }
 
         s_lastUp = currUp;
         s_lastDown = currDown;
