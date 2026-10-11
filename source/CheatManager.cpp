@@ -685,23 +685,58 @@ namespace ReLCS
             if (!pPed || weaponType <= 0) return;
 
             int slot = GetWeaponSlot(weaponType);
-            if (slot >= 0 && slot < 10)
+            if (slot < 0 || slot >= 10) return;
+
+            // 1. Get weapon model IDs from CWeaponInfo
+            typedef void*(__cdecl* GetWeaponInfoFn_t)(int);
+            GetWeaponInfoFn_t pfnGetWeaponInfo = reinterpret_cast<GetWeaponInfoFn_t>(0x5D5710);
+            void* pInfo = pfnGetWeaponInfo(weaponType);
+            int modelId = -1;
+            int model2Id = -1;
+            if (pInfo)
             {
-                // Clear existing weapon in this slot so it cleanly replaces whatever was in the slot
-                uintptr_t pWp = pPed + 0x408 + (slot * 0x18);
-                *reinterpret_cast<int*>(pWp + 0x00) = 0; // WEAPONTYPE_UNARMED
-                *reinterpret_cast<int*>(pWp + 0x04) = 0; // WEAPONSTATE_READY
-                *reinterpret_cast<int*>(pWp + 0x08) = 0; // m_nAmmoInClip
-                *reinterpret_cast<int*>(pWp + 0x0C) = 0; // m_nAmmoTotal
+                modelId = *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(pInfo) + 0x54);
+                model2Id = *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(pInfo) + 0x58);
             }
 
+            // 2. Request and load models into CStreaming
+            typedef void(__cdecl* RequestModelFn_t)(int, int);
+            RequestModelFn_t pfnRequestModel = reinterpret_cast<RequestModelFn_t>(0x40E310);
+            typedef void(__cdecl* LoadAllRequestedModelsFn_t)(bool);
+            LoadAllRequestedModelsFn_t pfnLoadModels = reinterpret_cast<LoadAllRequestedModelsFn_t>(0x40B5F0);
+            typedef void(__cdecl* SetModelIsDeletableFn_t)(int);
+            SetModelIsDeletableFn_t pfnSetModelIsDeletable = reinterpret_cast<SetModelIsDeletableFn_t>(0x40AEA0);
+
+            if (modelId > 0)
+                pfnRequestModel(modelId, 1);
+            if (model2Id > 0)
+                pfnRequestModel(model2Id, 1);
+            pfnLoadModels(false);
+
+            // 3. Remove old weapon model attached to Tommy's hand
+            typedef void(__thiscall* RemoveWeaponModelFn_t)(void*, int);
+            RemoveWeaponModelFn_t pfnRemoveWeaponModel = reinterpret_cast<RemoveWeaponModelFn_t>(0x4FFD80);
+            pfnRemoveWeaponModel(reinterpret_cast<void*>(pPed), -1);
+
+            // 4. Give the weapon to player ped
             int ammoCount = (slot == 0 || slot == 1) ? 1 : 99999;
             typedef void(__thiscall* GiveWeaponFn_t)(void*, int, unsigned int, bool);
             GiveWeaponFn_t pfnGiveWeapon = reinterpret_cast<GiveWeaponFn_t>(0x4FFA30);
             pfnGiveWeapon(reinterpret_cast<void*>(pPed), weaponType, static_cast<unsigned int>(ammoCount), true);
 
-            // Directly guarantee massive ammo in slot
-            if (slot >= 0 && slot < 10 && slot != 0 && slot != 1)
+            // 5. Explicitly switch active weapon to this slot and attach the model + update HUD
+            typedef void(__thiscall* SetCurrentWeaponFn_t)(void*, int);
+            SetCurrentWeaponFn_t pfnSetCurrentWeapon = reinterpret_cast<SetCurrentWeaponFn_t>(0x4FF900);
+            pfnSetCurrentWeapon(reinterpret_cast<void*>(pPed), slot);
+
+            // 6. Mark models as deletable so streaming engine manages them normally
+            if (modelId > 0)
+                pfnSetModelIsDeletable(modelId);
+            if (model2Id > 0)
+                pfnSetModelIsDeletable(model2Id);
+
+            // 7. Directly guarantee massive ammo in slot
+            if (slot != 0 && slot != 1)
             {
                 uintptr_t pWp = pPed + 0x408 + (slot * 0x18);
                 *reinterpret_cast<int*>(pWp + 0x08) = 9999;  // m_nAmmoInClip
@@ -716,9 +751,39 @@ namespace ReLCS
         __try
         {
             if (!pPed || weaponType <= 0) return;
+
+            typedef void*(__cdecl* GetWeaponInfoFn_t)(int);
+            GetWeaponInfoFn_t pfnGetWeaponInfo = reinterpret_cast<GetWeaponInfoFn_t>(0x5D5710);
+            void* pInfo = pfnGetWeaponInfo(weaponType);
+            int modelId = -1;
+            int model2Id = -1;
+            if (pInfo)
+            {
+                modelId = *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(pInfo) + 0x54);
+                model2Id = *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(pInfo) + 0x58);
+            }
+
+            typedef void(__cdecl* RequestModelFn_t)(int, int);
+            RequestModelFn_t pfnRequestModel = reinterpret_cast<RequestModelFn_t>(0x40E310);
+            typedef void(__cdecl* LoadAllRequestedModelsFn_t)(bool);
+            LoadAllRequestedModelsFn_t pfnLoadModels = reinterpret_cast<LoadAllRequestedModelsFn_t>(0x40B5F0);
+            typedef void(__cdecl* SetModelIsDeletableFn_t)(int);
+            SetModelIsDeletableFn_t pfnSetModelIsDeletable = reinterpret_cast<SetModelIsDeletableFn_t>(0x40AEA0);
+
+            if (modelId > 0)
+                pfnRequestModel(modelId, 1);
+            if (model2Id > 0)
+                pfnRequestModel(model2Id, 1);
+            pfnLoadModels(false);
+
             typedef void(__thiscall* GiveWeaponFn_t)(void*, int, unsigned int, bool);
             GiveWeaponFn_t pfnGiveWeapon = reinterpret_cast<GiveWeaponFn_t>(0x4FFA30);
             pfnGiveWeapon(reinterpret_cast<void*>(pPed), weaponType, static_cast<unsigned int>(ammo), true);
+
+            if (modelId > 0)
+                pfnSetModelIsDeletable(modelId);
+            if (model2Id > 0)
+                pfnSetModelIsDeletable(model2Id);
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
@@ -733,6 +798,9 @@ namespace ReLCS
             // Clear all slots first to eliminate overlap from other sets
             SafeClearWeapons(pPed);
 
+            typedef void(__thiscall* SetCurrentWeaponFn_t)(void*, int);
+            SetCurrentWeaponFn_t pfnSetCurrentWeapon = reinterpret_cast<SetCurrentWeaponFn_t>(0x4FF900);
+
             if (set == 1)
             {
                 // Set 1: Thug / Street Arsenal
@@ -745,6 +813,8 @@ namespace ReLCS
                 SafeGiveWeapon(pPed, 28, 50);    // Sniper Rifle
                 SafeGiveWeapon(pPed, 15, 25);    // Molotov Cocktails
                 SafeGiveWeapon(pPed, 31, 500);   // Flamethrower
+
+                pfnSetCurrentWeapon(reinterpret_cast<void*>(pPed), 6); // Equip Ruger
             }
             else if (set == 2)
             {
@@ -757,6 +827,8 @@ namespace ReLCS
                 SafeGiveWeapon(pPed, 29, 50);    // Laser Scope Sniper (PSG-1)
                 SafeGiveWeapon(pPed, 12, 25);    // Grenades
                 SafeGiveWeapon(pPed, 30, 25);    // Rocket Launcher
+
+                pfnSetCurrentWeapon(reinterpret_cast<void*>(pPed), 6); // Equip M4
             }
             else if (set == 3)
             {
@@ -767,6 +839,8 @@ namespace ReLCS
                 SafeGiveWeapon(pPed, 32, 500);   // M60 Heavy Machinegun
                 SafeGiveWeapon(pPed, 14, 25);    // Teargas
                 SafeGiveWeapon(pPed, 33, 500);   // Minigun
+
+                pfnSetCurrentWeapon(reinterpret_cast<void*>(pPed), 7); // Equip Minigun
             }
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
