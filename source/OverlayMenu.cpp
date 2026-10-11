@@ -770,6 +770,11 @@ namespace ReLCS
                         tag = CheatManager::IsInfiniteArmorEnabled() ? "[ACTIVE]" : "[OFF]";
                         tagColor = CheatManager::IsInfiniteArmorEnabled() ? 0xFF10B981 : 0xFF94A3B8;
                     }
+                    else if (item.id == LCSCheat::VehicleGodMode)
+                    {
+                        tag = CheatManager::IsVehicleGodModeEnabled() ? "[ACTIVE]" : "[OFF]";
+                        tagColor = CheatManager::IsVehicleGodModeEnabled() ? 0xFF10B981 : 0xFF94A3B8;
+                    }
                     else if (item.id == LCSCheat::UpsideDownMode)
                     {
                         tag = CheatManager::IsUpsideDownEnabled() ? "[ACTIVE]" : "";

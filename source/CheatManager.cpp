@@ -9,6 +9,7 @@ namespace ReLCS
     std::atomic<bool> CheatManager::s_bUnlimitedAmmo(false);
     std::atomic<bool> CheatManager::s_bInfiniteHealth(false);
     std::atomic<bool> CheatManager::s_bInfiniteArmor(false);
+    std::atomic<bool> CheatManager::s_bVehicleGodMode(false);
     std::atomic<bool> CheatManager::s_bUpsideDown(false);
     std::string CheatManager::s_lastActivatedName = "";
     std::string CheatManager::s_lastActivatedCategory = "";
@@ -205,7 +206,8 @@ namespace ReLCS
             { static_cast<LCSCheat>(1000 + 236), "Cheetah Classic", "Vehicle", "Spawns Cheetah Classic (car)", "", 236 },
 
             { LCSCheat::CarsDriveOnWater, "Cars Drive On Water", "Vehicle", "Vehicles float and drive across water", "JESUSCAR" },
-            { LCSCheat::DestroyAllCars, "Blow Up All Cars", "Vehicle", "Detonates all vehicles in area", "ALTRIGHT" },
+            { LCSCheat::VehicleGodMode, "Vehicle God Mode", "Vehicle", "Indestructible vehicle (no scratch, dent, or explosion)", "" },
+            { LCSCheat::DestroyAllCars, "Blow Up All Cars", "Vehicle", "Detonates all vehicles in area", "" },
             { LCSCheat::PerfectHandling, "Perfect Traction & Handling", "Vehicle", "Maximizes vehicle grip and cornering", "BETTERBIKES" },
             { LCSCheat::AggressiveDrivers, "Aggressive Drivers", "Vehicle", "Drivers ram into other cars aggressively", "MAXMAD" },
             { LCSCheat::ChromeCars, "White / Chrome Cars", "Vehicle", "Repaints all city vehicles white/chrome", "SOUTHTRAFFIC" },
@@ -388,11 +390,25 @@ namespace ReLCS
             *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x38) = spawn_y;
             *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x3C) = spawn_z;
 
-            // 7. Configure status flags (STATUS_PLAYER = 0x20) and unlocked doors
+            // 7. Configure status flags (STATUS_ABANDONED = 0x20) and unlocked doors
             uint8_t* pStatus = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x50);
             *pStatus = (*pStatus & 7) | 0x20;
 
             *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x230) = 1; // Door lock = CARLOCK_UNLOCKED
+
+            // Configure engine cleanup flags so CCarCtrl::Prune deletes the vehicle when player moves far away:
+            // 0x1FA: Bit 1 (0x02) = cleanable / bCanBeDeleted
+            // Bit 4 (0x10) = bIsMissionCar (MUST be 0 so engine does not protect it permanently)
+            uint8_t* pFlags1FA = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FA);
+            *pFlags1FA = (*pFlags1FA | 0x02) & ~0x10;
+
+            // 0x1F8: Bit 3 (0x08) = bIsLocked (MUST be 0)
+            uint8_t* pFlags1F8 = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1F8);
+            *pFlags1F8 = *pFlags1F8 & ~0x08;
+
+            // 0x1FB: Ensure standard damageability (NOT proof, can be damaged/dented/blown up normally)
+            uint8_t* pFlags1FB = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FB);
+            *pFlags1FB = (*pFlags1FB & ~0x1F) | 0x40;
 
             // 9. Add vehicle entity to CWorld at 0x4DB3F0
             typedef void(__cdecl* WorldAddFn_t)(void*);
@@ -553,14 +569,127 @@ namespace ReLCS
             if (pPed)
             {
                 *reinterpret_cast<float*>(pPed + 0x354) = health;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
 
-                // Also maintain car health if player is driving a vehicle
-                uintptr_t pVehicle = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
-                if (!pVehicle)
-                    pVehicle = *reinterpret_cast<uintptr_t*>(pPed + 0x3AC);
-                if (pVehicle)
+    static void SafeMaintainVehicleGodMode(uintptr_t pPlayerInfo)
+    {
+        __try
+        {
+            if (!pPlayerInfo) return;
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (!pPed) return;
+
+            uintptr_t pVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
+            if (!pVeh)
+                pVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3AC);
+
+            if (pVeh)
+            {
+                // 1. Set proof flags (bullet, fire, explosion, collision, melee) and disable bCanBeDamaged
+                // Offset 0x1FB:
+                // 0x01: bBulletProof
+                // 0x02: bFireProof
+                // 0x04: bExplosionProof
+                // 0x08: bCollisionProof
+                // 0x10: bMeleeProof
+                // 0x40: bCanBeDamaged
+                uint8_t* pProof = reinterpret_cast<uint8_t*>(pVeh + 0x1FB);
+                *pProof = (*pProof | 0x1F) & ~0x40;
+
+                // 2. Lock vehicle health at 1000.0f
+                *reinterpret_cast<float*>(pVeh + 0x204) = 1000.0f;
+
+                // 3. Clear all panel, bumper, door and light damage via CAutomobile::Fix (0x588530)
+                uintptr_t* pModelInfoPtrs = reinterpret_cast<uintptr_t*>(0x92D4C8);
+                int modelId = *reinterpret_cast<int16_t*>(pVeh + 0x5C);
+                uintptr_t pModelInfo = (pModelInfoPtrs && modelId >= 0 && modelId < 300) ? pModelInfoPtrs[modelId] : 0;
+                int vehType = pModelInfo ? *reinterpret_cast<int*>(pModelInfo + 0x3C) : -1;
+                bool isBike = (vehType == 5) || (modelId >= 202 && modelId <= 210) || (modelId == 225);
+                bool isBoat = (vehType == 1) || (modelId >= 192 && modelId <= 196);
+
+                if (!isBike && !isBoat)
                 {
-                    *reinterpret_cast<float*>(pVehicle + 0x204) = 1000.0f;
+                    typedef void(__thiscall* AutoFixFn_t)(void*);
+                    reinterpret_cast<AutoFixFn_t>(0x588530)(reinterpret_cast<void*>(pVeh));
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeDisableVehicleGodMode(uintptr_t pPlayerInfo)
+    {
+        __try
+        {
+            if (!pPlayerInfo) return;
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (!pPed) return;
+
+            uintptr_t pVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
+            if (!pVeh)
+                pVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3AC);
+
+            if (pVeh)
+            {
+                // Clear proof flags and re-enable bCanBeDamaged
+                uint8_t* pProof = reinterpret_cast<uint8_t*>(pVeh + 0x1FB);
+                *pProof = (*pProof & ~0x1F) | 0x40;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeBlowUpAllCars()
+    {
+        __try
+        {
+            uintptr_t pPool = *reinterpret_cast<uintptr_t*>(0xA0FDE4);
+            if (!pPool) return;
+
+            uint8_t* byteMap = *reinterpret_cast<uint8_t**>(pPool + 0x00);
+            uintptr_t pObjects = *reinterpret_cast<uintptr_t*>(pPool + 0x04);
+            int nSize = *reinterpret_cast<int*>(pPool + 0x08);
+
+            if (!byteMap || !pObjects || nSize <= 0) return;
+
+            uintptr_t pPed = 0;
+            uintptr_t pPlayerVeh = 0;
+            uintptr_t* pPlayerInfo = reinterpret_cast<uintptr_t*>(0x94AD28);
+            if (pPlayerInfo && *pPlayerInfo)
+            {
+                pPed = *pPlayerInfo;
+                if (pPed)
+                {
+                    pPlayerVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
+                    if (!pPlayerVeh)
+                        pPlayerVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3AC);
+                }
+            }
+
+            typedef void(__thiscall* BlowUpCarFn_t)(void*, void*, bool);
+            BlowUpCarFn_t pfnBlowUp = reinterpret_cast<BlowUpCarFn_t>(0x587D50);
+
+            for (int i = 0; i < nSize; ++i)
+            {
+                // In CPool, slot is valid / allocated if (byteMap[i] & 0x80) == 0
+                if ((byteMap[i] & 0x80) == 0)
+                {
+                    uintptr_t pVeh = pObjects + (i * 0x5DC);
+                    // If vehicle god mode is active on player's car, protect it!
+                    if (CheatManager::IsVehicleGodModeEnabled() && pVeh == pPlayerVeh)
+                    {
+                        continue;
+                    }
+
+                    // Remove proof flags and enable bCanBeDamaged
+                    *reinterpret_cast<uint8_t*>(pVeh + 0x1FB) &= ~0x1F;
+                    *reinterpret_cast<uint8_t*>(pVeh + 0x1FB) |= 0x40;
+
+                    // Detonate car instantly
+                    pfnBlowUp(reinterpret_cast<void*>(pVeh), reinterpret_cast<void*>(pPed), false);
                 }
             }
         }
@@ -1018,6 +1147,18 @@ namespace ReLCS
             SafeClearWeapons(*reinterpret_cast<uintptr_t*>(pPlayerInfo));
             break;
 
+        case LCSCheat::VehicleGodMode:
+            s_bVehicleGodMode = !s_bVehicleGodMode;
+            if (!s_bVehicleGodMode)
+            {
+                SafeDisableVehicleGodMode(pPlayerInfo);
+            }
+            break;
+
+        case LCSCheat::DestroyAllCars:
+            SafeBlowUpAllCars();
+            break;
+
         default:
             // Check if weapon selector
             if (info->weaponTypeId > 0)
@@ -1084,6 +1225,12 @@ namespace ReLCS
         if (s_bInfiniteArmor)
         {
             SafeSetArmour(0x94AD28, 100.0f);
+        }
+
+        // Maintain Vehicle God Mode if toggled on
+        if (s_bVehicleGodMode)
+        {
+            SafeMaintainVehicleGodMode(0x94AD28);
         }
     }
 

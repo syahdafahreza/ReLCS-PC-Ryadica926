@@ -57,6 +57,7 @@ namespace ReLCS
         SpawnMaverick,
         CarsDriveOnWater,
         DestroyAllCars,
+        VehicleGodMode,
         PerfectHandling,
         AggressiveDrivers,
         ChromeCars,
@@ -108,6 +109,7 @@ namespace ReLCS
         static bool IsUnlimitedAmmoEnabled() { return s_bUnlimitedAmmo; }
         static bool IsInfiniteHealthEnabled() { return s_bInfiniteHealth; }
         static bool IsInfiniteArmorEnabled() { return s_bInfiniteArmor; }
+        static bool IsVehicleGodModeEnabled() { return s_bVehicleGodMode; }
         static bool IsUpsideDownEnabled() { return s_bUpsideDown; }
         static const std::string& GetLastActivatedCheatName() { return s_lastActivatedName; }
         static const std::string& GetLastActivatedCategory() { return s_lastActivatedCategory; }
@@ -122,6 +124,7 @@ namespace ReLCS
         static std::atomic<bool> s_bUnlimitedAmmo;
         static std::atomic<bool> s_bInfiniteHealth;
         static std::atomic<bool> s_bInfiniteArmor;
+        static std::atomic<bool> s_bVehicleGodMode;
         static std::atomic<bool> s_bUpsideDown;
         static std::string s_lastActivatedName;
         static std::string s_lastActivatedCategory;
