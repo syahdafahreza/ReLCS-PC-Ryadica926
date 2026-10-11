@@ -186,7 +186,9 @@ namespace ReLCS
                 {
                     s_hHookedWnd = cp.hFocusWindow;
                     s_pOriginalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(cp.hFocusWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(GameWindowProc)));
-                    CrashLogger::LogMessage("[D3DHook] Dynamically hooked real D3D9 focus window: 0x%p", cp.hFocusWindow);
+                    char logBuf[128];
+                    snprintf(logBuf, sizeof(logBuf), "[D3DHook] Dynamically hooked real D3D9 focus window: 0x%p", cp.hFocusWindow);
+                    CrashLogger::LogMessage(logBuf);
                 }
             }
         }

@@ -29,7 +29,7 @@ namespace ReLCS
     void OverlayMenu::ToggleVisibility()
     {
         s_bVisible = !s_bVisible;
-        CrashLogger::LogMessage("[OverlayMenu] Menu visibility toggled to: %s", s_bVisible ? "SHOWN" : "HIDDEN");
+        CrashLogger::LogMessage(std::string("[OverlayMenu] Menu visibility toggled to: ") + (s_bVisible ? "SHOWN" : "HIDDEN"));
         if (s_bVisible)
         {
             ClipCursor(nullptr);
