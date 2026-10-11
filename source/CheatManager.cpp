@@ -417,6 +417,8 @@ namespace ReLCS
             {
                 reinterpret_cast<UpdateRwFrameFn_t>(0x4896C0)(pVeh);
             }
+
+            CrashLogger::LogMessage("[CheatManager] Hook_PositionAndAddVehicle: positioned and added vehicle model " + std::to_string(modelId));
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -609,12 +611,22 @@ namespace ReLCS
 
         DWORD oldProtect = 0;
 
-        // Hook 1: NOP the jl 0x4aeaa2 check at 0x4AE9AC (6 bytes: 0F 8C F0 00 00 00)
-        // This ensures the spawner never fails if parking space nodes are not found nearby.
+        // Hook 1: Clamp parking space node index at 0x4AE9AC:
+        // Original: 0F 8C F0 00 00 00 (jl 0x4aeaa2 - 6 bytes)
+        // We replace with:
+        // 79 02          - jns +2 (if edi >= 0, skip)
+        // 31 FF          - xor edi, edi (if edi < 0, set edi = 0 so [edi + 0x9B6E60] never reads out-of-bounds)
+        // 90 90          - nop nop
         void* pCheckAddr = reinterpret_cast<void*>(0x4AE9AC);
         if (VirtualProtect(pCheckAddr, 6, PAGE_EXECUTE_READWRITE, &oldProtect))
         {
-            memset(pCheckAddr, 0x90, 6);
+            uint8_t* p = reinterpret_cast<uint8_t*>(pCheckAddr);
+            p[0] = 0x79; // jns +2
+            p[1] = 0x02;
+            p[2] = 0x31; // xor edi, edi
+            p[3] = 0xFF;
+            p[4] = 0x90; // nop
+            p[5] = 0x90; // nop
             VirtualProtect(pCheckAddr, 6, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), pCheckAddr, 6);
         }
@@ -822,11 +834,33 @@ namespace ReLCS
         InstallVehicleSpawnHook();
         __try
         {
+            typedef void(__cdecl* RequestModelFn_t)(int, int);
+            RequestModelFn_t pfnRequestModel = reinterpret_cast<RequestModelFn_t>(0x40E310);
+            typedef void(__cdecl* LoadAllRequestedModelsFn_t)(bool);
+            LoadAllRequestedModelsFn_t pfnLoadModels = reinterpret_cast<LoadAllRequestedModelsFn_t>(0x40B5F0);
+
+            // 1. Request vehicle model and ensure it is fully loaded in memory before spawning
+            pfnRequestModel(modelId, 1);
+            for (int i = 0; i < 50; ++i)
+            {
+                uint8_t loadState = *reinterpret_cast<uint8_t*>(0x94DDD8 + modelId * 20);
+                if (loadState == 1) // LOADSTATE_LOADED
+                    break;
+                pfnLoadModels(false);
+            }
+
+            uint8_t finalLoadState = *reinterpret_cast<uint8_t*>(0x94DDD8 + modelId * 20);
+            CrashLogger::LogMessage("[CheatManager] SafeSpawnVehicle: model " + std::to_string(modelId) + " loadState=" + std::to_string(finalLoadState));
+
+            // 2. Invoke spawner (our hooks ensure CBike/CBoat class ctor and player-facing positioning)
             typedef void(__cdecl* SpawnVehicleFn_t)(int);
             SpawnVehicleFn_t pfnSpawn = reinterpret_cast<SpawnVehicleFn_t>(0x4AE8F0);
             pfnSpawn(modelId);
         }
-        __except (EXCEPTION_EXECUTE_HANDLER) {}
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            CrashLogger::LogMessage("[CheatManager] Exception in SafeSpawnVehicle!");
+        }
     }
 
     static void SafeAddMoneyAndRestore(uintptr_t pPlayerInfo, int amount)
