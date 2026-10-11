@@ -193,9 +193,12 @@ namespace ReLCS
             return str;
         };
 
+        char addrBuf[32];
+        snprintf(addrBuf, sizeof(addrBuf), "0x%08X", static_cast<uint32_t>(reinterpret_cast<uintptr_t>(rec->ExceptionAddress)));
+
         std::string msg = "GTA Re:LCS has encountered a fatal error.\n\n"
                           "Exception: " + desc + "\n"
-                          "Address: 0x" + std::to_string(reinterpret_cast<uintptr_t>(rec->ExceptionAddress)) +
+                          "Address: " + std::string(addrBuf) +
                           " (" + modName + ")\n\n"
                           "A detailed log was written to:\n" +
                           WStringToAString(s_logFilePath) + "\n"

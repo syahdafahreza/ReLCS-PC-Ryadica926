@@ -207,6 +207,7 @@ namespace ReLCS
 
             { LCSCheat::CarsDriveOnWater, "Cars Drive On Water", "Vehicle", "Vehicles float and drive across water", "JESUSCAR" },
             { LCSCheat::VehicleGodMode, "Vehicle God Mode", "Vehicle", "Indestructible vehicle (no scratch, dent, or explosion)", "" },
+            { LCSCheat::RepairVehicle, "Repair Current Vehicle", "Vehicle", "Instantly restores vehicle health, fixes all body damage/panels, and flips upright", "" },
             { LCSCheat::DestroyAllCars, "Blow Up All Cars", "Vehicle", "Detonates all vehicles in area", "" },
             { LCSCheat::PerfectHandling, "Perfect Traction & Handling", "Vehicle", "Maximizes vehicle grip and cornering", "BETTERBIKES" },
             { LCSCheat::AggressiveDrivers, "Aggressive Drivers", "Vehicle", "Drivers ram into other cars aggressively", "MAXMAD" },
@@ -402,10 +403,6 @@ namespace ReLCS
             uint8_t* pFlags1FA = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FA);
             *pFlags1FA = (*pFlags1FA | 0x02) & ~0x10;
 
-            // 0x1F8: Bit 3 (0x08) = bIsLocked (MUST be 0)
-            uint8_t* pFlags1F8 = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1F8);
-            *pFlags1F8 = *pFlags1F8 & ~0x08;
-
             // 0x1FB: Ensure standard damageability (NOT proof, can be damaged/dented/blown up normally)
             uint8_t* pFlags1FB = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FB);
             *pFlags1FB = (*pFlags1FB & ~0x1F) | 0x40;
@@ -421,6 +418,36 @@ namespace ReLCS
                 reinterpret_cast<void(__cdecl*)(void*)>(0x4DB3F0)(pVeh);
             }
             __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+    }
+
+    __declspec(naked) static void Hook_SampleLookup()
+    {
+        __asm
+        {
+            // If sound bank pointer [ecx+4] is NULL, return NULL safely
+            cmp dword ptr [ecx + 4], 0
+            jnz bank_valid
+            xor eax, eax
+            ret 4
+
+        bank_valid:
+            push ebx
+            mov ebx, [esp + 8]
+            sub ebx, [ecx + 0x0C]
+            imul ebx, ebx, 0x3C
+            add ebx, [ecx + 4]
+            test ebx, ebx
+            jz ret_zero
+
+            // Jump to 0x401022 to resume native engine execution
+            mov eax, 0x401022
+            jmp eax
+
+        ret_zero:
+            xor eax, eax
+            pop ebx
+            ret 4
         }
     }
 
@@ -514,6 +541,19 @@ namespace ReLCS
             FlushInstructionCache(GetCurrentProcess(), pPosAddr, posPatchSize);
         }
 
+        // Hook 4: Audio sample bank safety check at 0x401010 to prevent crash when sound bank unloaded
+        void* pAudioAddr = reinterpret_cast<void*>(0x401010);
+        if (VirtualProtect(pAudioAddr, 5, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pAudioAddr);
+            p[0] = 0xE9;
+            uintptr_t callNext = 0x401010 + 5;
+            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_SampleLookup) - callNext);
+            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
+            VirtualProtect(pAudioAddr, 5, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pAudioAddr, 5);
+        }
+
         s_installed = true;
         CrashLogger::LogMessage("[CheatManager] Installed vehicle constructor & driver-facing position hooks (CLEO-iOS style).");
     }
@@ -589,20 +629,20 @@ namespace ReLCS
             if (pVeh)
             {
                 // 1. Set proof flags (bullet, fire, explosion, collision, melee) and disable bCanBeDamaged
-                // Offset 0x1FB:
-                // 0x01: bBulletProof
-                // 0x02: bFireProof
-                // 0x04: bExplosionProof
-                // 0x08: bCollisionProof
-                // 0x10: bMeleeProof
-                // 0x40: bCanBeDamaged
                 uint8_t* pProof = reinterpret_cast<uint8_t*>(pVeh + 0x1FB);
                 *pProof = (*pProof | 0x1F) & ~0x40;
 
                 // 2. Lock vehicle health at 1000.0f
                 *reinterpret_cast<float*>(pVeh + 0x204) = 1000.0f;
 
-                // 3. Clear all panel, bumper, door and light damage via CAutomobile::Fix (0x588530)
+                // 3. Clear damage / fire timers so engine never starts smoking or burning
+                *reinterpret_cast<uint32_t*>(pVeh + 0x560) = 0;
+                *reinterpret_cast<uint32_t*>(pVeh + 0x494) = 0;
+
+                // 4. Extinguish fire
+                *reinterpret_cast<uintptr_t*>(pVeh + 0x1E8) = 0;
+
+                // 5. Check if vehicle is an automobile or bike:
                 uintptr_t* pModelInfoPtrs = reinterpret_cast<uintptr_t*>(0x92D4C8);
                 int modelId = *reinterpret_cast<int16_t*>(pVeh + 0x5C);
                 uintptr_t pModelInfo = (pModelInfoPtrs && modelId >= 0 && modelId < 300) ? pModelInfoPtrs[modelId] : 0;
@@ -612,8 +652,21 @@ namespace ReLCS
 
                 if (!isBike && !isBoat)
                 {
-                    typedef void(__thiscall* AutoFixFn_t)(void*);
-                    reinterpret_cast<AutoFixFn_t>(0x588530)(reinterpret_cast<void*>(pVeh));
+                    // Monitor CDamageManager at pVeh + 0x2A0:
+                    // If any panel, door, light, or wheel took any scratch/dent, immediately restore pristine mesh
+                    uint32_t* pDmg = reinterpret_cast<uint32_t*>(pVeh + 0x2A0);
+                    bool hasDamage = (pDmg[1] != 0 || pDmg[2] != 0 || pDmg[3] != 0 || pDmg[4] != 0 || pDmg[5] != 0);
+                    if (hasDamage)
+                    {
+                        typedef void(__thiscall* AutoFixFn_t)(void*);
+                        reinterpret_cast<AutoFixFn_t>(0x588530)(reinterpret_cast<void*>(pVeh));
+                        memset(reinterpret_cast<void*>(pVeh + 0x2A0), 0, 0x18);
+                    }
+                }
+                else if (isBike)
+                {
+                    typedef void(__thiscall* BikeFixFn_t)(void*);
+                    reinterpret_cast<BikeFixFn_t>(0x609F00)(reinterpret_cast<void*>(pVeh));
                 }
             }
         }
@@ -637,6 +690,72 @@ namespace ReLCS
                 // Clear proof flags and re-enable bCanBeDamaged
                 uint8_t* pProof = reinterpret_cast<uint8_t*>(pVeh + 0x1FB);
                 *pProof = (*pProof & ~0x1F) | 0x40;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    static void SafeRepairCurrentVehicle(uintptr_t pPlayerInfo)
+    {
+        __try
+        {
+            if (!pPlayerInfo) return;
+            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+            if (!pPed) return;
+
+            uintptr_t pVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
+            if (!pVeh)
+                pVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3AC);
+
+            if (!pVeh) return;
+
+            // 1. Restore vehicle health to 1000.0f
+            *reinterpret_cast<float*>(pVeh + 0x204) = 1000.0f;
+
+            // 2. Clear damage / fire timers (Pay N Spray offsets 0x560 & 0x494)
+            *reinterpret_cast<uint32_t*>(pVeh + 0x560) = 0;
+            *reinterpret_cast<uint32_t*>(pVeh + 0x494) = 0;
+
+            // 3. Extinguish fire
+            *reinterpret_cast<uintptr_t*>(pVeh + 0x1E8) = 0;
+
+            // 4. Ensure doors unlocked (CARLOCK_UNLOCKED)
+            *reinterpret_cast<uint32_t*>(pVeh + 0x230) = 1;
+
+            // 5. Restore vehicle geometries, panels, doors, lights, and engine status
+            uintptr_t* pModelInfoPtrs = reinterpret_cast<uintptr_t*>(0x92D4C8);
+            int modelId = *reinterpret_cast<int16_t*>(pVeh + 0x5C);
+            uintptr_t pModelInfo = (pModelInfoPtrs && modelId >= 0 && modelId < 300) ? pModelInfoPtrs[modelId] : 0;
+            int vehType = pModelInfo ? *reinterpret_cast<int*>(pModelInfo + 0x3C) : -1;
+            bool isBike = (vehType == 5) || (modelId >= 202 && modelId <= 210) || (modelId == 225);
+
+            if (isBike)
+            {
+                typedef void(__thiscall* BikeFixFn_t)(void*);
+                reinterpret_cast<BikeFixFn_t>(0x609F00)(reinterpret_cast<void*>(pVeh));
+            }
+            else
+            {
+                typedef void(__thiscall* AutoFixFn_t)(void*);
+                reinterpret_cast<AutoFixFn_t>(0x588530)(reinterpret_cast<void*>(pVeh));
+                memset(reinterpret_cast<void*>(pVeh + 0x2A0), 0, 0x18);
+            }
+
+            // 6. Flip upright if overturned / upside-down (up.z < 0.0f) matching Pay N Spray / CLEO-iOS
+            float up_z = *reinterpret_cast<float*>(pVeh + 0x2C);
+            if (up_z < 0.0f)
+            {
+                float fwd_x = *reinterpret_cast<float*>(pVeh + 0x14);
+                float fwd_y = *reinterpret_cast<float*>(pVeh + 0x18);
+                float heading = atan2f(-fwd_x, fwd_y);
+
+                typedef void(__thiscall* SetRotateFn_t)(void*, float, float, float);
+                reinterpret_cast<SetRotateFn_t>(0x4DF240)(
+                    reinterpret_cast<void*>(pVeh + 0x04),
+                    0.0f,
+                    0.0f,
+                    heading
+                );
             }
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -1153,6 +1272,10 @@ namespace ReLCS
             {
                 SafeDisableVehicleGodMode(pPlayerInfo);
             }
+            break;
+
+        case LCSCheat::RepairVehicle:
+            SafeRepairCurrentVehicle(pPlayerInfo);
             break;
 
         case LCSCheat::DestroyAllCars:

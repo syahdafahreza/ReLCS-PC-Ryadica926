@@ -58,6 +58,7 @@ namespace ReLCS
         CarsDriveOnWater,
         DestroyAllCars,
         VehicleGodMode,
+        RepairVehicle,
         PerfectHandling,
         AggressiveDrivers,
         ChromeCars,
