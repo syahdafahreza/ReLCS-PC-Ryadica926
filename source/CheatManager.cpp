@@ -451,6 +451,27 @@ namespace ReLCS
         }
     }
 
+    __declspec(naked) static void Hook_PlaySampleCheck()
+    {
+        __asm
+        {
+            test eax, eax
+            jnz sample_valid
+            // If sample pointer is null, exit 0x4058B0 safely returning NULL
+            pop ebp
+            pop ebx
+            ret
+
+        sample_valid:
+            mov ebp, eax
+            mov eax, [esp + 0x0C]
+            add eax, dword ptr [0x978798]
+            // Jump back to 0x4058DC
+            mov edx, 0x4058DC
+            jmp edx
+        }
+    }
+
     static void InstallVehicleSpawnHook()
     {
         static bool s_installed = false;
@@ -552,6 +573,24 @@ namespace ReLCS
             *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
             VirtualProtect(pAudioAddr, 5, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), pAudioAddr, 5);
+        }
+
+        // Hook 5: Audio sample playback safety check at 0x4058D0 to prevent null dereference at 0x4058E0
+        void* pPlayAddr = reinterpret_cast<void*>(0x4058D0);
+        const size_t playPatchSize = 12;
+        if (VirtualProtect(pPlayAddr, playPatchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pPlayAddr);
+            p[0] = 0xE9;
+            uintptr_t callNext = 0x4058D0 + 5;
+            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_PlaySampleCheck) - callNext);
+            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
+            for (size_t i = 5; i < playPatchSize; ++i)
+            {
+                p[i] = 0x90;
+            }
+            VirtualProtect(pPlayAddr, playPatchSize, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pPlayAddr, playPatchSize);
         }
 
         s_installed = true;
