@@ -18,6 +18,7 @@ namespace ReLCS
     {
     public:
         static void Init();
+        static void HandleInput();
         static void OnMenuKeyDown(WPARAM vk);
         static void Render(IDirect3DDevice9* pDevice);
         static void OnLostDevice();

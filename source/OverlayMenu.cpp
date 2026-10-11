@@ -1,5 +1,6 @@
 #include "OverlayMenu.h"
 #include "Font8x8.h"
+#include "CrashLogger.h"
 
 namespace ReLCS
 {
@@ -28,6 +29,7 @@ namespace ReLCS
     void OverlayMenu::ToggleVisibility()
     {
         s_bVisible = !s_bVisible;
+        CrashLogger::LogMessage("[OverlayMenu] Menu visibility toggled to: %s", s_bVisible ? "SHOWN" : "HIDDEN");
         if (s_bVisible)
         {
             ClipCursor(nullptr);
@@ -263,20 +265,72 @@ namespace ReLCS
         }
     }
 
+    void OverlayMenu::HandleInput()
+    {
+        static bool s_lastF9 = false;
+        static bool s_lastF10 = false;
+        static bool s_lastUp = false;
+        static bool s_lastDown = false;
+        static bool s_lastLeft = false;
+        static bool s_lastRight = false;
+        static bool s_lastEnter = false;
+        static bool s_lastEsc = false;
+
+        bool currF9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
+        bool currF10 = (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
+
+        if (currF9 && !s_lastF9)
+        {
+            ToggleVisibility();
+        }
+        s_lastF9 = currF9;
+
+        if (currF10 && !s_lastF10)
+        {
+            ToggleFpsCounter();
+        }
+        s_lastF10 = currF10;
+
+        if (!s_bVisible)
+            return;
+
+        bool currUp = (GetAsyncKeyState(VK_UP) & 0x8000) != 0;
+        bool currDown = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0;
+        bool currLeft = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+        bool currRight = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+        bool currEnter = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+        bool currEsc = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+
+        if (currUp && !s_lastUp) OnMenuKeyDown(VK_UP);
+        if (currDown && !s_lastDown) OnMenuKeyDown(VK_DOWN);
+        if (currLeft && !s_lastLeft) OnMenuKeyDown(VK_LEFT);
+        if (currRight && !s_lastRight) OnMenuKeyDown(VK_RIGHT);
+        if (currEnter && !s_lastEnter) OnMenuKeyDown(VK_RETURN);
+        if (currEsc && !s_lastEsc) ToggleVisibility();
+
+        s_lastUp = currUp;
+        s_lastDown = currDown;
+        s_lastLeft = currLeft;
+        s_lastRight = currRight;
+        s_lastEnter = currEnter;
+        s_lastEsc = currEsc;
+    }
+
     void OverlayMenu::Render(IDirect3DDevice9* pDevice)
     {
         if (!pDevice)
             return;
 
         UpdateFps();
+        HandleInput();
         CheatManager::Update();
 
-        // Capture full state block to preserve all RenderStates and Shaders
+        // Capture full state block if supported to preserve all RenderStates and Shaders
         IDirect3DStateBlock9* pStateBlock = nullptr;
-        if (FAILED(pDevice->CreateStateBlock(D3DSBT_ALL, &pStateBlock)))
-            return;
-
-        pStateBlock->Capture();
+        if (SUCCEEDED(pDevice->CreateStateBlock(D3DSBT_ALL, &pStateBlock)) && pStateBlock)
+        {
+            pStateBlock->Capture();
+        }
 
         // Configure rendering state for 2D UI
         pDevice->SetVertexShader(nullptr);
@@ -339,8 +393,12 @@ namespace ReLCS
                 totalRows += 1; // FPS counter item
 
             const int MAX_VISIBLE_ROWS = 12;
+            if (s_scrollOffset < 0) s_scrollOffset = 0;
+            if (s_scrollOffset >= totalRows && totalRows > 0) s_scrollOffset = totalRows - 1;
+
             int firstVisible = s_scrollOffset;
             int countToDraw = (std::min)(MAX_VISIBLE_ROWS, totalRows - firstVisible);
+            if (countToDraw < 0) countToDraw = 0;
 
             float itemStartY = tabY + 34.0f;
             float rowH = 26.0f;
@@ -461,7 +519,10 @@ namespace ReLCS
         }
 
         // Apply and release state block to restore original game graphics pipeline
-        pStateBlock->Apply();
-        pStateBlock->Release();
+        if (pStateBlock)
+        {
+            pStateBlock->Apply();
+            pStateBlock->Release();
+        }
     }
 }

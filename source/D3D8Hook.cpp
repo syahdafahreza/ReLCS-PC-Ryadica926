@@ -29,13 +29,18 @@ namespace ReLCS
 
     static void SafeRenderOverlay(IDirect3DDevice9* pDevice)
     {
+        static bool s_bExceptionLogged = false;
         __try
         {
             OverlayMenu::Render(pDevice);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            // Fail safely to prevent overlay rendering crash from killing the game
+            if (!s_bExceptionLogged)
+            {
+                CrashLogger::LogMessage("[D3DHook] EXCEPTION in SafeRenderOverlay! OverlayMenu::Render failed.");
+                s_bExceptionLogged = true;
+            }
         }
     }
 
@@ -56,11 +61,6 @@ namespace ReLCS
 
             if (OverlayMenu::IsVisible())
             {
-                // Navigate menu
-                if (wParam == VK_UP || wParam == VK_DOWN || wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_RETURN)
-                {
-                    OverlayMenu::OnMenuKeyDown(wParam);
-                }
                 // Swallow all keystrokes while menu is open so player doesn't move or trigger game pause
                 return 0;
             }
@@ -176,6 +176,21 @@ namespace ReLCS
 
     HRESULT STDMETHODCALLTYPE D3D8Hook::Hooked_EndScene(IDirect3DDevice9* pThis)
     {
+        // Dynamically ensure the active Direct3D focus window is hooked to our WndProc
+        if (pThis)
+        {
+            D3DDEVICE_CREATION_PARAMETERS cp;
+            if (SUCCEEDED(pThis->GetCreationParameters(&cp)) && cp.hFocusWindow)
+            {
+                if (s_hHookedWnd != cp.hFocusWindow)
+                {
+                    s_hHookedWnd = cp.hFocusWindow;
+                    s_pOriginalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(cp.hFocusWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(GameWindowProc)));
+                    CrashLogger::LogMessage("[D3DHook] Dynamically hooked real D3D9 focus window: 0x%p", cp.hFocusWindow);
+                }
+            }
+        }
+
         if (OverlayMenu::IsVisible())
         {
             // Keep cursor unclipped and clear DirectInput mouse state each frame
