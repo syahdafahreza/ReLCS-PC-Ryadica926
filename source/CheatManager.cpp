@@ -264,6 +264,10 @@ namespace ReLCS
 
     static void* __cdecl Hook_CreateVehicleForCheat(int modelId, int createdBy)
     {
+        // Enforce createdBy = 2 (MISSION_VEHICLE) so CCarCtrl::RegisterCar counts it as a mission car
+        // and CCarCtrl::Prune never recycles or auto-deletes it.
+        createdBy = 2;
+
         typedef void*(__cdecl* NewFn_t)(size_t);
         NewFn_t pfnNew = reinterpret_cast<NewFn_t>(0x5BAB20);
 
@@ -390,11 +394,27 @@ namespace ReLCS
         *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x38) = spawn_y;
         *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x3C) = spawn_z;
 
-        // 7. Configure status flags (STATUS_PLAYER = 0x20) and unlocked doors (matching 7be2059)
+        // Zero linear and angular momentum to prevent physics glitches or despawn triggers
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x70) = 0.0f;
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x74) = 0.0f;
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x78) = 0.0f;
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x7C) = 0.0f;
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x80) = 0.0f;
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x84) = 0.0f;
+
+        // 7. Configure status flags (STATUS_ABANDONED = 0x20) and unlocked doors
         uint8_t* pStatus = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x50);
         *pStatus = (*pStatus & 7) | 0x20;
 
-        *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x230) = 1; // Door lock = CARLOCK_UNLOCKED
+        // Door lock = CARLOCK_UNLOCKED
+        *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x230) = 1;
+
+        // Explicitly set m_nCreatedBy = 2 (MISSION_VEHICLE) so CCarCtrl::Prune never recycles/despawns it
+        *reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1F8) = 2;
+
+        // Clear bCanBeDeleted (bit 3 of +0x1FC)
+        uint8_t* pFlags4 = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FC);
+        *pFlags4 &= ~0x08;
 
         // 9. Add vehicle entity to CWorld at 0x4DB3F0
         typedef void(__cdecl* WorldAddFn_t)(void*);
@@ -432,6 +452,21 @@ namespace ReLCS
 
         DWORD oldProtect = 0;
 
+        // Hook 0: Prevent CStreaming::SetModelIsDeletable at 0x4AE967
+        // In native CCheat::VehicleCheat, 0x4AE967 is jne 0x4ae977 (75 0E).
+        // By changing it to jmp short 0x4ae977 (EB 0E), the engine never calls
+        // CStreaming::SetModelIsDeletable (0x40AEA0) and SetMissionDoesntRequireModel (0x40ADF0).
+        // This keeps the spawned vehicle model loaded and protected in streaming memory.
+        void* pStreamSkipAddr = reinterpret_cast<void*>(0x4AE967);
+        if (VirtualProtect(pStreamSkipAddr, 2, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pStreamSkipAddr);
+            p[0] = 0xEB; // jmp short 0x4AE977
+            p[1] = 0x0E;
+            VirtualProtect(pStreamSkipAddr, 2, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pStreamSkipAddr, 2);
+        }
+
         // Hook 1: NOP the jl 0x4aeaa2 check at 0x4AE9AC (6 bytes: 0F 8C F0 00 00 00)
         // This ensures the spawner never fails if parking space nodes are not found nearby.
         void* pCheckAddr = reinterpret_cast<void*>(0x4AE9AC);
@@ -450,9 +485,9 @@ namespace ReLCS
         {
             uint8_t* p = reinterpret_cast<uint8_t*>(pCtorAddr);
 
-            // 6A 01          - push 1
+            // 6A 02          - push 2 (MISSION_VEHICLE)
             p[0] = 0x6A;
-            p[1] = 0x01;
+            p[1] = 0x02;
             // 56             - push esi
             p[2] = 0x56;
             // E8 xx xx xx xx - call Hook_CreateVehicleForCheat
@@ -521,6 +556,15 @@ namespace ReLCS
 
     static void DoSpawnVehicle(int modelId)
     {
+        typedef void(__cdecl* RequestModelFn_t)(int, int);
+        RequestModelFn_t pfnRequestModel = reinterpret_cast<RequestModelFn_t>(0x40E310);
+        typedef void(__cdecl* LoadAllRequestedModelsFn_t)(bool);
+        LoadAllRequestedModelsFn_t pfnLoadModels = reinterpret_cast<LoadAllRequestedModelsFn_t>(0x40B5F0);
+
+        // Ensure model is requested and loaded
+        pfnRequestModel(modelId, 1);
+        pfnLoadModels(false);
+
         typedef void(__cdecl* SpawnVehicleFn_t)(int);
         SpawnVehicleFn_t pfnSpawn = reinterpret_cast<SpawnVehicleFn_t>(0x4AE8F0);
         pfnSpawn(modelId);
