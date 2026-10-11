@@ -413,7 +413,10 @@ namespace ReLCS
 
             // 10. Sync RenderWare clump frame with world coordinates so doors/dummies match vehicle location
             typedef void(__thiscall* UpdateRwFrameFn_t)(void*);
-            reinterpret_cast<UpdateRwFrameFn_t>(0x4896C0)(pVeh);
+            if (*reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x4C) != 0)
+            {
+                reinterpret_cast<UpdateRwFrameFn_t>(0x4896C0)(pVeh);
+            }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -559,6 +562,43 @@ namespace ReLCS
             call eax
         ret_safe:
             ret 4
+        }
+    }
+
+    __declspec(naked) static void Hook_RpClumpGetPlugin()
+    {
+        __asm
+        {
+            mov eax, [esp + 4]
+            cmp eax, 0x10000
+            jb ret_null
+            mov edx, 0x69A1D0
+            add eax, dword ptr [edx]
+            add eax, 4
+            mov eax, [eax]
+            ret
+
+        ret_null:
+            xor eax, eax
+            ret
+        }
+    }
+
+    __declspec(naked) static void Hook_RpClumpSetPlugin()
+    {
+        __asm
+        {
+            mov ecx, [esp + 4]
+            cmp ecx, 0x10000
+            jb ret_safe
+            mov eax, [esp + 8]
+            mov edx, 0x69A1D0
+            add ecx, dword ptr [edx]
+            add ecx, 4
+            mov [ecx], eax
+
+        ret_safe:
+            ret
         }
     }
 
@@ -741,6 +781,36 @@ namespace ReLCS
             for (size_t i = 5; i < cfg4Size; ++i) p[i] = 0x90;
             VirtualProtect(pCfg4, cfg4Size, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), pCfg4, cfg4Size);
+        }
+
+        // Hook 10: RpClumpGetPlugin safety check at 0x5814F0 to prevent crash at 0x5814FD on null clump
+        void* pClumpGet = reinterpret_cast<void*>(0x5814F0);
+        const size_t clumpGetSize = 16;
+        if (VirtualProtect(pClumpGet, clumpGetSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pClumpGet);
+            p[0] = 0xE9;
+            uintptr_t callNext = 0x5814F0 + 5;
+            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_RpClumpGetPlugin) - callNext);
+            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
+            for (size_t i = 5; i < clumpGetSize; ++i) p[i] = 0x90;
+            VirtualProtect(pClumpGet, clumpGetSize, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pClumpGet, clumpGetSize);
+        }
+
+        // Hook 11: RpClumpSetPlugin safety check at 0x581500 to prevent crash on null clump
+        void* pClumpSet = reinterpret_cast<void*>(0x581500);
+        const size_t clumpSetSize = 20;
+        if (VirtualProtect(pClumpSet, clumpSetSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pClumpSet);
+            p[0] = 0xE9;
+            uintptr_t callNext = 0x581500 + 5;
+            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_RpClumpSetPlugin) - callNext);
+            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
+            for (size_t i = 5; i < clumpSetSize; ++i) p[i] = 0x90;
+            VirtualProtect(pClumpSet, clumpSetSize, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pClumpSet, clumpSetSize);
         }
 
         s_installed = true;
