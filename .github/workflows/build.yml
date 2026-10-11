@@ -35,11 +35,19 @@ jobs:
             /p:Platform=Win32 `
             /p:OutDir="${{ github.workspace }}\build\\" `
             /p:TargetName=ReLCS-Cleo `
-            /p:TargetExt=.asi
+            /p:TargetExt=.asi `
+            /fileLogger /fileLoggerParameters:LogFile=msbuild.log;Verbosity=normal
 
           if (-not (Test-Path "${{ github.workspace }}\build\ReLCS-Cleo.asi")) {
             throw "Build failed: ReLCS-Cleo.asi was not generated."
           }
+
+      - name: Upload Build Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msbuild-log
+          path: msbuild.log
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
