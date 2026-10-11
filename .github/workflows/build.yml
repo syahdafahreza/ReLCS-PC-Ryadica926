@@ -27,22 +27,7 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build Release Win32
-        shell: pwsh
-        run: |
-          $buildOutput = msbuild ReLCS-Cleo.sln `
-            /m `
-            /p:Configuration=Release `
-            /p:Platform=Win32 `
-            /p:OutDir="${{ github.workspace }}\build\\" `
-            /p:TargetName=ReLCS-Cleo `
-            /p:TargetExt=.asi *>&1
-
-          $buildOutput | Write-Host
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "${{ github.workspace }}\build\ReLCS-Cleo.asi")) {
-            $errs = $buildOutput | Where-Object { $_ -match "error " -or $_ -match "fatal " }
-            "### MSBuild Errors`n```````n" + ($errs -join "`n") + "`n``````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
-            throw "Build failed with exit code $LASTEXITCODE."
-          }
+        run: msbuild ReLCS-Cleo.sln /m /p:Configuration=Release /p:Platform=Win32 /p:OutDir="${{ github.workspace }}\build\\" /p:TargetName=ReLCS-Cleo /p:TargetExt=.asi
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
