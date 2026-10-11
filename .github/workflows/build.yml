@@ -39,6 +39,7 @@ jobs:
             /fileLogger /fileLoggerParameters:LogFile=msbuild.log;Verbosity=normal
 
           if (-not (Test-Path "${{ github.workspace }}\build\ReLCS-Cleo.asi")) {
+            Get-Content msbuild.log | Select-String "error " | ForEach-Object { Write-Output "::error::$($_)" }
             throw "Build failed: ReLCS-Cleo.asi was not generated."
           }
 
