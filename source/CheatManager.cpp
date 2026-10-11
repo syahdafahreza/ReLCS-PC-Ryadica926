@@ -264,9 +264,9 @@ namespace ReLCS
 
     static void* __cdecl Hook_CreateVehicleForCheat(int modelId, int createdBy)
     {
-        // Enforce createdBy = 2 (MISSION_VEHICLE) so CCarCtrl::RegisterCar counts it as a mission car
-        // and CCarCtrl::Prune never recycles or auto-deletes it.
-        createdBy = 2;
+        // Enforce createdBy = 1 (RANDOM_VEHICLE) so the vehicle behaves like normal traffic (non-persistent)
+        // and can be naturally recycled by CCarCtrl when left behind far away.
+        createdBy = 1;
 
         typedef void*(__cdecl* NewFn_t)(size_t);
         NewFn_t pfnNew = reinterpret_cast<NewFn_t>(0x5BAB20);
@@ -409,12 +409,8 @@ namespace ReLCS
         // Door lock = CARLOCK_UNLOCKED
         *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x230) = 1;
 
-        // Explicitly set m_nCreatedBy = 2 (MISSION_VEHICLE) so CCarCtrl::Prune never recycles/despawns it
-        *reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1F8) = 2;
-
-        // Clear bCanBeDeleted (bit 3 of +0x1FC)
-        uint8_t* pFlags4 = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FC);
-        *pFlags4 &= ~0x08;
+        // Mark as RANDOM_VEHICLE (1) at +0x1F8 so it behaves like ambient traffic (non-persistent)
+        *reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1F8) = 1;
 
         // 9. Add vehicle entity to CWorld at 0x4DB3F0
         typedef void(__cdecl* WorldAddFn_t)(void*);
@@ -456,7 +452,7 @@ namespace ReLCS
         // In native CCheat::VehicleCheat, 0x4AE967 is jne 0x4ae977 (75 0E).
         // By changing it to jmp short 0x4ae977 (EB 0E), the engine never calls
         // CStreaming::SetModelIsDeletable (0x40AEA0) and SetMissionDoesntRequireModel (0x40ADF0).
-        // This keeps the spawned vehicle model loaded and protected in streaming memory.
+        // This keeps the spawned vehicle model loaded and protected in streaming memory while in view.
         void* pStreamSkipAddr = reinterpret_cast<void*>(0x4AE967);
         if (VirtualProtect(pStreamSkipAddr, 2, PAGE_EXECUTE_READWRITE, &oldProtect))
         {
@@ -485,9 +481,9 @@ namespace ReLCS
         {
             uint8_t* p = reinterpret_cast<uint8_t*>(pCtorAddr);
 
-            // 6A 02          - push 2 (MISSION_VEHICLE)
+            // 6A 01          - push 1 (RANDOM_VEHICLE - ambient traffic)
             p[0] = 0x6A;
-            p[1] = 0x02;
+            p[1] = 0x01;
             // 56             - push esi
             p[2] = 0x56;
             // E8 xx xx xx xx - call Hook_CreateVehicleForCheat
