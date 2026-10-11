@@ -27,20 +27,25 @@ namespace ReLCS
         }
     }
 
+    static void LogRenderException()
+    {
+        static bool s_bLogged = false;
+        if (!s_bLogged)
+        {
+            s_bLogged = true;
+            CrashLogger::LogMessage("[D3DHook] EXCEPTION in SafeRenderOverlay! OverlayMenu::Render failed.");
+        }
+    }
+
     static void SafeRenderOverlay(IDirect3DDevice9* pDevice)
     {
-        static bool s_bExceptionLogged = false;
         __try
         {
             OverlayMenu::Render(pDevice);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            if (!s_bExceptionLogged)
-            {
-                CrashLogger::LogMessage("[D3DHook] EXCEPTION in SafeRenderOverlay! OverlayMenu::Render failed.");
-                s_bExceptionLogged = true;
-            }
+            LogRenderException();
         }
     }
 
@@ -174,6 +179,16 @@ namespace ReLCS
         }
     }
 
+    static void SafeClearDirectInputMouse()
+    {
+        __try
+        {
+            memset(reinterpret_cast<void*>(0x94D788), 0, 0x18); // CPad::NewMouseControllerState
+            memset(reinterpret_cast<void*>(0x936908), 0, 0x18); // CPad::OldMouseControllerState
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
     HRESULT STDMETHODCALLTYPE D3D8Hook::Hooked_EndScene(IDirect3DDevice9* pThis)
     {
         // Dynamically ensure the active Direct3D focus window is hooked to our WndProc
@@ -197,12 +212,7 @@ namespace ReLCS
         {
             // Keep cursor unclipped and clear DirectInput mouse state each frame
             ClipCursor(nullptr);
-            __try
-            {
-                memset(reinterpret_cast<void*>(0x94D788), 0, 0x18); // CPad::NewMouseControllerState
-                memset(reinterpret_cast<void*>(0x936908), 0, 0x18); // CPad::OldMouseControllerState
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
+            SafeClearDirectInputMouse();
         }
 
         // Render menu overlay at the end of the scene before buffer is presented
