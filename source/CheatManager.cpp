@@ -425,28 +425,31 @@ namespace ReLCS
     {
         __asm
         {
-            // If sound bank pointer [ecx+4] is NULL, return NULL safely
-            cmp dword ptr [ecx + 4], 0
-            jnz bank_valid
-            xor eax, eax
-            ret 4
+            // Verify sound bank pointer in ecx
+            cmp ecx, 0x10000
+            jb ret_zero_bank
 
-        bank_valid:
+            // If sound bank data pointer [ecx+4] is NULL or invalid, return NULL safely
+            mov eax, [ecx + 4]
+            cmp eax, 0x10000
+            jb ret_zero_bank
+
             push ebx
             mov ebx, [esp + 8]
             sub ebx, [ecx + 0x0C]
             imul ebx, ebx, 0x3C
-            add ebx, [ecx + 4]
-            test ebx, ebx
-            jz ret_zero
+            add ebx, eax
+            cmp ebx, 0x10000
+            jb ret_zero_sample
 
             // Jump to 0x401022 to resume native engine execution
             mov eax, 0x401022
             jmp eax
 
-        ret_zero:
-            xor eax, eax
+        ret_zero_sample:
             pop ebx
+        ret_zero_bank:
+            xor eax, eax
             ret 4
         }
     }
@@ -455,20 +458,41 @@ namespace ReLCS
     {
         __asm
         {
-            test eax, eax
-            jnz sample_valid
-            // If sample pointer is null, exit 0x4058B0 safely returning NULL
+            // Verify sample pointer returned from 0x401010
+            cmp eax, 0x10000
+            jb ret_null
+
+            mov ebp, eax
+
+            // Check if pRwObject [esp + 0x0C] is a valid pointer
+            mov eax, [esp + 0x0C]
+            cmp eax, 0x10000
+            jb ret_null
+
+            // Dereference the plugin offset at address 0x978798
+            mov edx, 0x978798
+            mov edx, dword ptr [edx]
+            test edx, edx
+            js ret_null
+
+            add eax, edx
+            cmp eax, 0x10000
+            jb ret_null
+
+            xor edx, edx
+            mov ebx, [eax]
+            cmp ebx, 0x10000
+            jb ret_null
+
+            // Jump to 0x4058E0 to continue native engine execution
+            mov edx, 0x4058E0
+            jmp edx
+
+        ret_null:
+            xor eax, eax
             pop ebp
             pop ebx
             ret
-
-        sample_valid:
-            mov ebp, eax
-            mov eax, [esp + 0x0C]
-            add eax, dword ptr [0x978798]
-            // Jump back to 0x4058DC
-            mov edx, 0x4058DC
-            jmp edx
         }
     }
 
@@ -577,7 +601,7 @@ namespace ReLCS
 
         // Hook 5: Audio sample playback safety check at 0x4058D0 to prevent null dereference at 0x4058E0
         void* pPlayAddr = reinterpret_cast<void*>(0x4058D0);
-        const size_t playPatchSize = 12;
+        const size_t playPatchSize = 16;
         if (VirtualProtect(pPlayAddr, playPatchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
         {
             uint8_t* p = reinterpret_cast<uint8_t*>(pPlayAddr);
