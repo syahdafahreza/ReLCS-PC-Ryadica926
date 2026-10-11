@@ -15,6 +15,10 @@ namespace ReLCS
 
     IDirect3DTexture9* OverlayMenu::s_pFontTexture = nullptr;
     std::vector<std::string> OverlayMenu::s_categories = { "PLAYER", "VEHICLE", "WORLD", "VISUAL/GAME" };
+    int OverlayMenu::s_vehicleFilter = 0;
+    std::vector<std::string> OverlayMenu::s_vehicleFilterNames = {
+        "ALL", "CARS", "BIKES", "BOATS", "PLANES", "CHEATS"
+    };
 
     void OverlayMenu::Init()
     {
@@ -23,6 +27,7 @@ namespace ReLCS
         s_activeCategory = 0;
         s_selectedIndex = 0;
         s_scrollOffset = 0;
+        s_vehicleFilter = 0;
         s_lastFpsTime = std::chrono::steady_clock::now();
     }
 
@@ -41,6 +46,66 @@ namespace ReLCS
         }
     }
 
+    enum VehicleSubCategory
+    {
+        VEH_SUB_ALL = 0,
+        VEH_SUB_CARS = 1,
+        VEH_SUB_BIKES = 2,
+        VEH_SUB_BOATS = 3,
+        VEH_SUB_AIRCRAFT = 4,
+        VEH_SUB_CHEATS = 5
+    };
+
+    static VehicleSubCategory ClassifyVehicle(const CheatInfo& c)
+    {
+        if (c.vehicleModelId <= 0)
+            return VEH_SUB_CHEATS;
+
+        int id = c.vehicleModelId;
+
+        // Bikes & Motorcycles (10 models)
+        if (id == 202 || id == 203 || id == 204 || id == 205 || id == 206 ||
+            id == 207 || id == 208 || id == 209 || id == 210 || id == 225)
+        {
+            return VEH_SUB_BIKES;
+        }
+
+        // Boats, Ships, Ferries (5 models)
+        if (id == 192 || id == 193 || id == 194 || id == 195 || id == 196)
+        {
+            return VEH_SUB_BOATS;
+        }
+
+        // Planes & Helicopters (12 models)
+        if (id == 164 || id == 198 || id == 199 || id == 200 || id == 201 ||
+            id == 211 || id == 212 || id == 213 || id == 214 || id == 215 ||
+            id == 216 || id == 224)
+        {
+            return VEH_SUB_AIRCRAFT;
+        }
+
+        // All other models are Cars / Vans / Trucks / SUVs / Emergency / Tanks (79 models)
+        return VEH_SUB_CARS;
+    }
+
+    void OverlayMenu::SetVehicleFilter(int filterIndex)
+    {
+        if (filterIndex >= 0 && filterIndex < static_cast<int>(s_vehicleFilterNames.size()))
+        {
+            s_vehicleFilter = filterIndex;
+            s_selectedIndex = 0;
+            s_scrollOffset = 0;
+        }
+    }
+
+    void OverlayMenu::CycleVehicleFilter(int direction)
+    {
+        int count = static_cast<int>(s_vehicleFilterNames.size());
+        s_vehicleFilter = (s_vehicleFilter + direction + count) % count;
+        s_selectedIndex = 0;
+        s_scrollOffset = 0;
+    }
+
     std::vector<CheatInfo> OverlayMenu::GetCheatsForCategory(int categoryIndex)
     {
         std::vector<CheatInfo> result;
@@ -57,7 +122,15 @@ namespace ReLCS
         for (const auto& cheat : CheatManager::GetCheats())
         {
             if (cheat.category == targetCat)
+            {
+                if (categoryIndex == 1 && s_vehicleFilter != VEH_SUB_ALL)
+                {
+                    VehicleSubCategory sub = ClassifyVehicle(cheat);
+                    if (sub != static_cast<VehicleSubCategory>(s_vehicleFilter))
+                        continue;
+                }
                 result.push_back(cheat);
+            }
         }
         return result;
     }
@@ -131,12 +204,37 @@ namespace ReLCS
         if (!s_bVisible)
             return;
 
+        if (s_activeCategory == 1) // VEHICLE category
+        {
+            if (vk == VK_TAB)
+            {
+                CycleVehicleFilter((GetAsyncKeyState(VK_SHIFT) & 0x8000) ? -1 : 1);
+                return;
+            }
+            else if (vk == 'Q' || vk == 'q' || vk == VK_OEM_4)
+            {
+                CycleVehicleFilter(-1);
+                return;
+            }
+            else if (vk == 'E' || vk == 'e' || vk == VK_OEM_6)
+            {
+                CycleVehicleFilter(1);
+                return;
+            }
+            else if (vk == '1' || vk == VK_NUMPAD1) { SetVehicleFilter(0); return; }
+            else if (vk == '2' || vk == VK_NUMPAD2) { SetVehicleFilter(1); return; }
+            else if (vk == '3' || vk == VK_NUMPAD3) { SetVehicleFilter(2); return; }
+            else if (vk == '4' || vk == VK_NUMPAD4) { SetVehicleFilter(3); return; }
+            else if (vk == '5' || vk == VK_NUMPAD5) { SetVehicleFilter(4); return; }
+            else if (vk == '6' || vk == VK_NUMPAD6) { SetVehicleFilter(5); return; }
+        }
+
         std::vector<CheatInfo> currentCategoryCheats = GetCheatsForCategory(s_activeCategory);
         int totalItems = static_cast<int>(currentCategoryCheats.size());
         if (s_activeCategory == 3)
             totalItems += 1; // FPS counter toggle
 
-        const int MAX_VISIBLE_ROWS = 12;
+        const int MAX_VISIBLE_ROWS = (s_activeCategory == 1) ? 11 : 12;
 
         if (vk == VK_LEFT)
         {
@@ -275,6 +373,11 @@ namespace ReLCS
         static bool s_lastRight = false;
         static bool s_lastEnter = false;
         static bool s_lastEsc = false;
+        static bool s_lastTab = false;
+        static bool s_lastQ = false;
+        static bool s_lastE = false;
+        static bool s_lastNum[6] = { false, false, false, false, false, false };
+        static bool s_lastLButton = false;
         static auto s_lastToggleTime = std::chrono::steady_clock::now();
 
         auto now = std::chrono::steady_clock::now();
@@ -306,6 +409,9 @@ namespace ReLCS
         bool currRight = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
         bool currEnter = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
         bool currEsc = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+        bool currTab = (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
+        bool currQ = (GetAsyncKeyState('Q') & 0x8000) != 0 || (GetAsyncKeyState(VK_OEM_4) & 0x8000) != 0;
+        bool currE = (GetAsyncKeyState('E') & 0x8000) != 0 || (GetAsyncKeyState(VK_OEM_6) & 0x8000) != 0;
 
         if (currUp && !s_lastUp) OnMenuKeyDown(VK_UP);
         if (currDown && !s_lastDown) OnMenuKeyDown(VK_DOWN);
@@ -318,12 +424,85 @@ namespace ReLCS
             s_lastToggleTime = now;
         }
 
+        if (s_activeCategory == 1)
+        {
+            if (currTab && !s_lastTab) OnMenuKeyDown(VK_TAB);
+            if (currQ && !s_lastQ) OnMenuKeyDown('Q');
+            if (currE && !s_lastE) OnMenuKeyDown('E');
+
+            int numKeys[6] = { '1', '2', '3', '4', '5', '6' };
+            int numpadKeys[6] = { VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6 };
+            for (int k = 0; k < 6; k++)
+            {
+                bool currNum = ((GetAsyncKeyState(numKeys[k]) & 0x8000) != 0) || ((GetAsyncKeyState(numpadKeys[k]) & 0x8000) != 0);
+                if (currNum && !s_lastNum[k])
+                {
+                    OnMenuKeyDown(numKeys[k]);
+                }
+                s_lastNum[k] = currNum;
+            }
+        }
+
+        // Mouse click navigation support
+        bool currLButton = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        if (currLButton && !s_lastLButton)
+        {
+            POINT pt;
+            if (GetCursorPos(&pt))
+            {
+                HWND hWnd = GetForegroundWindow();
+                if (hWnd)
+                {
+                    ScreenToClient(hWnd, &pt);
+                    float mx = static_cast<float>(pt.x);
+                    float my = static_cast<float>(pt.y);
+
+                    const float menuX = 35.0f;
+                    const float menuY = 45.0f;
+                    const float menuW = 460.0f;
+
+                    // Main Category Tabs
+                    float tabY = menuY + 40.0f;
+                    float tabW = menuW / 4.0f;
+                    if (my >= tabY && my <= tabY + 24.0f && mx >= menuX && mx <= menuX + menuW)
+                    {
+                        int clickedCat = static_cast<int>((mx - menuX) / tabW);
+                        if (clickedCat >= 0 && clickedCat < 4)
+                        {
+                            s_activeCategory = clickedCat;
+                            s_selectedIndex = 0;
+                            s_scrollOffset = 0;
+                        }
+                    }
+
+                    // Vehicle Filter Pills (when in Vehicle tab)
+                    if (s_activeCategory == 1)
+                    {
+                        float filterY = tabY + 28.0f;
+                        float fW = (menuW - 16.0f) / 6.0f;
+                        if (my >= filterY && my <= filterY + 22.0f && mx >= menuX + 8.0f && mx <= menuX + menuW - 8.0f)
+                        {
+                            int clickedFilter = static_cast<int>((mx - (menuX + 8.0f)) / fW);
+                            if (clickedFilter >= 0 && clickedFilter < 6)
+                            {
+                                SetVehicleFilter(clickedFilter);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        s_lastLButton = currLButton;
+
         s_lastUp = currUp;
         s_lastDown = currDown;
         s_lastLeft = currLeft;
         s_lastRight = currRight;
         s_lastEnter = currEnter;
         s_lastEsc = currEsc;
+        s_lastTab = currTab;
+        s_lastQ = currQ;
+        s_lastE = currE;
     }
 
     void OverlayMenu::Render(IDirect3DDevice9* pDevice)
@@ -395,6 +574,26 @@ namespace ReLCS
                 DrawTextString(pDevice, tX + 8.0f, tabY + 7.0f, s_categories[i], tabTextColor, 1.0f);
             }
 
+            // Subcategory Filter Pills (Live filter bar when VEHICLE tab is active)
+            float filterY = tabY + 28.0f;
+            if (s_activeCategory == 1)
+            {
+                float fW = (menuW - 16.0f) / 6.0f;
+                for (int j = 0; j < 6; j++)
+                {
+                    float fX = menuX + 8.0f + (j * fW);
+                    bool isFilterActive = (j == s_vehicleFilter);
+                    DWORD pBg = isFilterActive ? 0xFF0284C7 : 0xFF1E293B;
+                    DWORD pTextColor = isFilterActive ? 0xFFFFFFFF : 0xFF94A3B8;
+
+                    DrawRect(pDevice, fX + 1.0f, filterY, fW - 2.0f, 20.0f, pBg);
+
+                    float textW = s_vehicleFilterNames[j].length() * 8.0f * 0.95f;
+                    float textX = fX + (fW - textW) / 2.0f;
+                    DrawTextString(pDevice, textX, filterY + 5.0f, s_vehicleFilterNames[j], pTextColor, 0.95f);
+                }
+            }
+
             // Items list for currently active category
             std::vector<CheatInfo> curCheats = GetCheatsForCategory(s_activeCategory);
 
@@ -402,7 +601,7 @@ namespace ReLCS
             if (s_activeCategory == 3)
                 totalRows += 1; // FPS counter item
 
-            const int MAX_VISIBLE_ROWS = 12;
+            const int MAX_VISIBLE_ROWS = (s_activeCategory == 1) ? 11 : 12;
             if (s_scrollOffset < 0) s_scrollOffset = 0;
             if (s_scrollOffset >= totalRows && totalRows > 0) s_scrollOffset = totalRows - 1;
 
@@ -410,7 +609,7 @@ namespace ReLCS
             int countToDraw = (std::min)(MAX_VISIBLE_ROWS, totalRows - firstVisible);
             if (countToDraw < 0) countToDraw = 0;
 
-            float itemStartY = tabY + 34.0f;
+            float itemStartY = (s_activeCategory == 1) ? (filterY + 25.0f) : (tabY + 34.0f);
             float rowH = 26.0f;
 
             for (int k = 0; k < countToDraw; k++)
@@ -495,11 +694,20 @@ namespace ReLCS
             // Footer instructions bar
             float footerY = menuY + menuH - 30.0f;
             DrawRect(pDevice, menuX, footerY, menuW, 30.0f, 0xFF0F172A);
-            DrawTextString(pDevice, menuX + 16.0f, footerY + 8.0f,
-                "[UP/DN] Move  [ENTER] Apply  [F9] Close", 0xFF94A3B8, 1.05f);
+
+            if (s_activeCategory == 1)
+            {
+                DrawTextString(pDevice, menuX + 14.0f, footerY + 8.0f,
+                    "[TAB/Q/E/1-6] Filter  [UP/DN] Move  [ENTER] Spawn", 0xFF94A3B8, 0.95f);
+            }
+            else
+            {
+                DrawTextString(pDevice, menuX + 16.0f, footerY + 8.0f,
+                    "[UP/DN] Move  [ENTER] Apply  [F9] Close", 0xFF94A3B8, 1.05f);
+            }
 
             char counterBuf[32];
-            snprintf(counterBuf, sizeof(counterBuf), "[%d/%d]", s_selectedIndex + 1, totalRows);
+            snprintf(counterBuf, sizeof(counterBuf), "[%d/%d]", (totalRows > 0 ? s_selectedIndex + 1 : 0), totalRows);
             DrawTextString(pDevice, menuX + menuW - 70.0f, footerY + 8.0f, counterBuf, 0xFF60A5FA, 1.05f);
         }
 
