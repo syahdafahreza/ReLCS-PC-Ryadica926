@@ -27,7 +27,19 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build Release Win32
-        run: msbuild ReLCS-Cleo.sln /m /p:Configuration=Release /p:Platform=Win32 /p:OutDir="${{ github.workspace }}\build\\" /p:TargetName=ReLCS-Cleo /p:TargetExt=.asi
+        shell: pwsh
+        run: |
+          msbuild ReLCS-Cleo.sln `
+            /m `
+            /p:Configuration=Release `
+            /p:Platform=Win32 `
+            /p:OutDir="${{ github.workspace }}\build\\" `
+            /p:TargetName=ReLCS-Cleo `
+            /p:TargetExt=.asi
+
+          if (-not (Test-Path "${{ github.workspace }}\build\ReLCS-Cleo.asi")) {
+            throw "Build failed: ReLCS-Cleo.asi was not generated."
+          }
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
