@@ -306,125 +306,136 @@ namespace ReLCS
         }
     }
 
+    static void DoPositionAndAddVehicle(void* pVeh, int modelId)
+    {
+        const uintptr_t pPlayerInfo = 0x94AD28;
+        uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
+        if (!pPed)
+        {
+            reinterpret_cast<void(__cdecl*)(void*)>(0x4DB3F0)(pVeh);
+            return;
+        }
+
+        // 1. Read player position from CPlaceable at ped + 0x34..0x3C
+        float px = *reinterpret_cast<float*>(pPed + 0x34);
+        float py = *reinterpret_cast<float*>(pPed + 0x38);
+        float pz = *reinterpret_cast<float*>(pPed + 0x3C);
+
+        // Forward facing vector from ped matrix at ped + 0x14..0x18
+        float fx = *reinterpret_cast<float*>(pPed + 0x14);
+        float fy = *reinterpret_cast<float*>(pPed + 0x18);
+
+        // Normalize 2D forward vector
+        float len = sqrtf(fx * fx + fy * fy);
+        float dir_x = (len > 0.001f) ? (fx / len) : 0.0f;
+        float dir_y = (len > 0.001f) ? (fy / len) : 1.0f;
+
+        // 2. Determine distance based on player state & vehicle class (matching cleo-ios)
+        uintptr_t inVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
+        bool isBoat = (modelId >= 192 && modelId <= 196);
+        bool isBike = (modelId >= 202 && modelId <= 210) || (modelId == 225);
+
+        float dist = 5.0f;
+        if (inVeh)
+        {
+            dist = 8.5f;
+        }
+        else if (modelId == 162 || modelId == 139 || modelId == 163 || modelId == 161 || modelId == 165 || modelId == 213)
+        {
+            dist = 8.5f; // Large vehicles (Rhino, Trashmaster, Barracks, Bus, Coach, Hunter)
+        }
+        else if (isBoat)
+        {
+            dist = 10.0f;
+        }
+        else if (isBike)
+        {
+            dist = 3.5f;
+        }
+
+        float spawn_x = px + dir_x * dist;
+        float spawn_y = py + dir_y * dist;
+
+        // 3. Query ground elevation via CWorld::FindGroundZForCoord (0x4D5540)
+        typedef float(__cdecl* FindGroundZFn_t)(float, float);
+        float ground_z = reinterpret_cast<FindGroundZFn_t>(0x4D5540)(spawn_x, spawn_y);
+
+        float base_z = pz;
+        if (ground_z > -50.0f && fabsf(ground_z - pz) < 10.0f)
+        {
+            base_z = ground_z;
+        }
+
+        // 4. Calculate heading angle in radians: in GTA coordinate system (forward.x = -sin(heading), forward.y = cos(heading))
+        float heading = atan2f(-dir_x, dir_y);
+        // Rotate vehicle 90 degrees sideways so player stands directly in front of the driver seat (left door)
+        // Exactly matches CLEO-iOS Vice City / III implementation: heading + FRAC_PI_2
+        float veh_heading = heading + 1.57079632679f;
+
+        // 5. Apply rotation to vehicle placeable matrix via CMatrix::SetRotate at 0x4DF240
+        typedef void(__thiscall* SetRotateFn_t)(void*, float, float, float);
+        reinterpret_cast<SetRotateFn_t>(0x4DF240)(
+            reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pVeh) + 0x04),
+            0.0f,
+            0.0f,
+            veh_heading
+        );
+
+        // 6. Set vehicle coordinates into placeable matrix translation vector (veh + 0x34..0x3C)
+        float spawn_z = base_z + (isBike ? 0.35f : (isBoat ? 0.0f : 0.6f));
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x34) = spawn_x;
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x38) = spawn_y;
+        *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x3C) = spawn_z;
+
+        // 7. Configure status flags (STATUS_PHYSICS = 0x18, matching script/ambient cars so door opening triggers) and unlocked doors
+        uint8_t* pStatus = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x50);
+        *pStatus = (*pStatus & 7) | 0x18;
+
+        *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x230) = 1; // Door lock = CARLOCK_UNLOCKED
+
+        // Configure engine cleanup flags so CCarCtrl::Prune deletes the vehicle when player moves far away:
+        // 0x1FA: Bit 1 (0x02) = cleanable / bCanBeDeleted
+        // Bit 4 (0x10) = bIsMissionCar (MUST be 0 so engine does not protect it permanently)
+        uint8_t* pFlags1FA = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FA);
+        *pFlags1FA = (*pFlags1FA | 0x02) & ~0x10;
+
+        // 0x1FB: Ensure standard damageability (NOT proof, can be damaged/dented/blown up normally)
+        uint8_t* pFlags1FB = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FB);
+        *pFlags1FB = (*pFlags1FB & ~0x1F) | 0x40;
+
+        // 9. Add vehicle entity to CWorld at 0x4DB3F0
+        typedef void(__cdecl* WorldAddFn_t)(void*);
+        reinterpret_cast<WorldAddFn_t>(0x4DB3F0)(pVeh);
+
+        // 10. Sync RenderWare clump frame with world coordinates so doors/dummies match vehicle location
+        typedef void(__thiscall* UpdateRwFrameFn_t)(void*);
+        if (*reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x4C) != 0)
+        {
+            reinterpret_cast<UpdateRwFrameFn_t>(0x4896C0)(pVeh);
+        }
+
+        CrashLogger::LogMessage("[CheatManager] Hook_PositionAndAddVehicle: positioned and added vehicle model " + std::to_string(modelId));
+    }
+
+    static void SafeFallbackAddVehicle(void* pVeh)
+    {
+        typedef void(__cdecl* WorldAddFn_t)(void*);
+        reinterpret_cast<WorldAddFn_t>(0x4DB3F0)(pVeh);
+    }
+
     static void __cdecl Hook_PositionAndAddVehicle(void* pVeh, int modelId)
     {
         if (!pVeh) return;
 
         __try
         {
-            const uintptr_t pPlayerInfo = 0x94AD28;
-            uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
-            if (!pPed)
-            {
-                reinterpret_cast<void(__cdecl*)(void*)>(0x4DB3F0)(pVeh);
-                return;
-            }
-
-            // 1. Read player position from CPlaceable at ped + 0x34..0x3C
-            float px = *reinterpret_cast<float*>(pPed + 0x34);
-            float py = *reinterpret_cast<float*>(pPed + 0x38);
-            float pz = *reinterpret_cast<float*>(pPed + 0x3C);
-
-            // Forward facing vector from ped matrix at ped + 0x14..0x18
-            float fx = *reinterpret_cast<float*>(pPed + 0x14);
-            float fy = *reinterpret_cast<float*>(pPed + 0x18);
-
-            // Normalize 2D forward vector
-            float len = sqrtf(fx * fx + fy * fy);
-            float dir_x = (len > 0.001f) ? (fx / len) : 0.0f;
-            float dir_y = (len > 0.001f) ? (fy / len) : 1.0f;
-
-            // 2. Determine distance based on player state & vehicle class (matching cleo-ios)
-            uintptr_t inVeh = *reinterpret_cast<uintptr_t*>(pPed + 0x3A8);
-            bool isBoat = (modelId >= 192 && modelId <= 196);
-            bool isBike = (modelId >= 202 && modelId <= 210) || (modelId == 225);
-
-            float dist = 5.0f;
-            if (inVeh)
-            {
-                dist = 8.5f;
-            }
-            else if (modelId == 162 || modelId == 139 || modelId == 163 || modelId == 161 || modelId == 165 || modelId == 213)
-            {
-                dist = 8.5f; // Large vehicles (Rhino, Trashmaster, Barracks, Bus, Coach, Hunter)
-            }
-            else if (isBoat)
-            {
-                dist = 10.0f;
-            }
-            else if (isBike)
-            {
-                dist = 3.5f;
-            }
-
-            float spawn_x = px + dir_x * dist;
-            float spawn_y = py + dir_y * dist;
-
-            // 3. Query ground elevation via CWorld::FindGroundZForCoord (0x4D5540)
-            typedef float(__cdecl* FindGroundZFn_t)(float, float);
-            float ground_z = reinterpret_cast<FindGroundZFn_t>(0x4D5540)(spawn_x, spawn_y);
-
-            float base_z = pz;
-            if (ground_z > -50.0f && fabsf(ground_z - pz) < 10.0f)
-            {
-                base_z = ground_z;
-            }
-
-            // 4. Calculate heading angle in radians: in GTA coordinate system (forward.x = -sin(heading), forward.y = cos(heading))
-            float heading = atan2f(-dir_x, dir_y);
-            // Rotate vehicle 90 degrees sideways so player stands directly in front of the driver seat (left door)
-            // Exactly matches CLEO-iOS Vice City / III implementation: heading + FRAC_PI_2
-            float veh_heading = heading + 1.57079632679f;
-
-            // 5. Apply rotation to vehicle placeable matrix via CMatrix::SetRotate at 0x4DF240
-            typedef void(__thiscall* SetRotateFn_t)(void*, float, float, float);
-            reinterpret_cast<SetRotateFn_t>(0x4DF240)(
-                reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pVeh) + 0x04),
-                0.0f,
-                0.0f,
-                veh_heading
-            );
-
-            // 6. Set vehicle coordinates into placeable matrix translation vector (veh + 0x34..0x3C)
-            float spawn_z = base_z + (isBike ? 0.35f : (isBoat ? 0.0f : 0.6f));
-            *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x34) = spawn_x;
-            *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x38) = spawn_y;
-            *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x3C) = spawn_z;
-
-            // 7. Configure status flags (STATUS_PHYSICS = 0x18, matching script/ambient cars so door opening triggers) and unlocked doors
-            uint8_t* pStatus = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x50);
-            *pStatus = (*pStatus & 7) | 0x18;
-
-            *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x230) = 1; // Door lock = CARLOCK_UNLOCKED
-
-            // Configure engine cleanup flags so CCarCtrl::Prune deletes the vehicle when player moves far away:
-            // 0x1FA: Bit 1 (0x02) = cleanable / bCanBeDeleted
-            // Bit 4 (0x10) = bIsMissionCar (MUST be 0 so engine does not protect it permanently)
-            uint8_t* pFlags1FA = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FA);
-            *pFlags1FA = (*pFlags1FA | 0x02) & ~0x10;
-
-            // 0x1FB: Ensure standard damageability (NOT proof, can be damaged/dented/blown up normally)
-            uint8_t* pFlags1FB = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FB);
-            *pFlags1FB = (*pFlags1FB & ~0x1F) | 0x40;
-
-            // 9. Add vehicle entity to CWorld at 0x4DB3F0
-            typedef void(__cdecl* WorldAddFn_t)(void*);
-            reinterpret_cast<WorldAddFn_t>(0x4DB3F0)(pVeh);
-
-            // 10. Sync RenderWare clump frame with world coordinates so doors/dummies match vehicle location
-            typedef void(__thiscall* UpdateRwFrameFn_t)(void*);
-            if (*reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x4C) != 0)
-            {
-                reinterpret_cast<UpdateRwFrameFn_t>(0x4896C0)(pVeh);
-            }
-
-            CrashLogger::LogMessage("[CheatManager] Hook_PositionAndAddVehicle: positioned and added vehicle model " + std::to_string(modelId));
+            DoPositionAndAddVehicle(pVeh, modelId);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             __try
             {
-                reinterpret_cast<void(__cdecl*)(void*)>(0x4DB3F0)(pVeh);
+                SafeFallbackAddVehicle(pVeh);
             }
             __except (EXCEPTION_EXECUTE_HANDLER) {}
         }
@@ -829,37 +840,47 @@ namespace ReLCS
         CrashLogger::LogMessage("[CheatManager] Installed vehicle constructor & driver-facing position hooks (CLEO-iOS style).");
     }
 
+    static void DoSpawnVehicle(int modelId)
+    {
+        typedef void(__cdecl* RequestModelFn_t)(int, int);
+        RequestModelFn_t pfnRequestModel = reinterpret_cast<RequestModelFn_t>(0x40E310);
+        typedef void(__cdecl* LoadAllRequestedModelsFn_t)(bool);
+        LoadAllRequestedModelsFn_t pfnLoadModels = reinterpret_cast<LoadAllRequestedModelsFn_t>(0x40B5F0);
+
+        // 1. Request vehicle model and ensure it is fully loaded in memory before spawning
+        pfnRequestModel(modelId, 1);
+        for (int i = 0; i < 50; ++i)
+        {
+            uint8_t loadState = *reinterpret_cast<uint8_t*>(0x94DDD8 + modelId * 20);
+            if (loadState == 1) // LOADSTATE_LOADED
+                break;
+            pfnLoadModels(false);
+        }
+
+        uint8_t finalLoadState = *reinterpret_cast<uint8_t*>(0x94DDD8 + modelId * 20);
+        CrashLogger::LogMessage("[CheatManager] SafeSpawnVehicle: model " + std::to_string(modelId) + " loadState=" + std::to_string(finalLoadState));
+
+        // 2. Invoke spawner (our hooks ensure CBike/CBoat class ctor and player-facing positioning)
+        typedef void(__cdecl* SpawnVehicleFn_t)(int);
+        SpawnVehicleFn_t pfnSpawn = reinterpret_cast<SpawnVehicleFn_t>(0x4AE8F0);
+        pfnSpawn(modelId);
+    }
+
+    static void LogSpawnException()
+    {
+        CrashLogger::LogMessage("[CheatManager] Exception in SafeSpawnVehicle!");
+    }
+
     static void SafeSpawnVehicle(int modelId)
     {
         InstallVehicleSpawnHook();
         __try
         {
-            typedef void(__cdecl* RequestModelFn_t)(int, int);
-            RequestModelFn_t pfnRequestModel = reinterpret_cast<RequestModelFn_t>(0x40E310);
-            typedef void(__cdecl* LoadAllRequestedModelsFn_t)(bool);
-            LoadAllRequestedModelsFn_t pfnLoadModels = reinterpret_cast<LoadAllRequestedModelsFn_t>(0x40B5F0);
-
-            // 1. Request vehicle model and ensure it is fully loaded in memory before spawning
-            pfnRequestModel(modelId, 1);
-            for (int i = 0; i < 50; ++i)
-            {
-                uint8_t loadState = *reinterpret_cast<uint8_t*>(0x94DDD8 + modelId * 20);
-                if (loadState == 1) // LOADSTATE_LOADED
-                    break;
-                pfnLoadModels(false);
-            }
-
-            uint8_t finalLoadState = *reinterpret_cast<uint8_t*>(0x94DDD8 + modelId * 20);
-            CrashLogger::LogMessage("[CheatManager] SafeSpawnVehicle: model " + std::to_string(modelId) + " loadState=" + std::to_string(finalLoadState));
-
-            // 2. Invoke spawner (our hooks ensure CBike/CBoat class ctor and player-facing positioning)
-            typedef void(__cdecl* SpawnVehicleFn_t)(int);
-            SpawnVehicleFn_t pfnSpawn = reinterpret_cast<SpawnVehicleFn_t>(0x4AE8F0);
-            pfnSpawn(modelId);
+            DoSpawnVehicle(modelId);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            CrashLogger::LogMessage("[CheatManager] Exception in SafeSpawnVehicle!");
+            LogSpawnException();
         }
     }
 
