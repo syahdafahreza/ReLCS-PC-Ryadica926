@@ -496,6 +496,68 @@ namespace ReLCS
         }
     }
 
+    __declspec(naked) static void Hook_AudioSampleConfig1()
+    {
+        __asm
+        {
+            cmp ecx, 0x10000
+            jb ret_safe
+            mov dword ptr [ecx + 0x30], 1
+            mov eax, [esp + 4]
+            mov [ecx + 0x34], eax
+            mov eax, [esp + 8]
+            mov [ecx + 0x38], eax
+        ret_safe:
+            ret 8
+        }
+    }
+
+    __declspec(naked) static void Hook_AudioSampleConfig2()
+    {
+        __asm
+        {
+            cmp ecx, 0x10000
+            jb ret_safe
+            mov dword ptr [ecx + 0x30], 2
+            mov eax, [esp + 4]
+            mov [ecx + 0x34], eax
+            mov eax, [esp + 8]
+            mov [ecx + 0x38], eax
+        ret_safe:
+            ret 8
+        }
+    }
+
+    __declspec(naked) static void Hook_AudioSampleConfig3()
+    {
+        __asm
+        {
+            cmp ecx, 0x10000
+            jb ret_safe
+            fld dword ptr [esp + 4]
+            fstp dword ptr [ecx + 0x18]
+            fld dword ptr [esp + 8]
+            fstp dword ptr [ecx + 0x1C]
+        ret_safe:
+            ret 8
+        }
+    }
+
+    __declspec(naked) static void Hook_AudioSampleConfig4()
+    {
+        __asm
+        {
+            cmp ecx, 0x10000
+            jb ret_safe
+            or word ptr [ecx + 0x2E], 1
+            push dword ptr [esp + 4]
+            mov eax, 0x401770
+            call eax
+        ret_safe:
+            ret 4
+        }
+    }
+
     static void InstallVehicleSpawnHook()
     {
         static bool s_installed = false;
@@ -615,6 +677,66 @@ namespace ReLCS
             }
             VirtualProtect(pPlayAddr, playPatchSize, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), pPlayAddr, playPatchSize);
+        }
+
+        // Hook 6: Audio sample config 1 safety at 0x4016A0 (prevent crash on vehicle entry)
+        void* pCfg1 = reinterpret_cast<void*>(0x4016A0);
+        const size_t cfg1Size = 24;
+        if (VirtualProtect(pCfg1, cfg1Size, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pCfg1);
+            p[0] = 0xE9;
+            uintptr_t callNext = 0x4016A0 + 5;
+            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_AudioSampleConfig1) - callNext);
+            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
+            for (size_t i = 5; i < cfg1Size; ++i) p[i] = 0x90;
+            VirtualProtect(pCfg1, cfg1Size, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pCfg1, cfg1Size);
+        }
+
+        // Hook 7: Audio sample config 2 safety at 0x4016C0
+        void* pCfg2 = reinterpret_cast<void*>(0x4016C0);
+        const size_t cfg2Size = 24;
+        if (VirtualProtect(pCfg2, cfg2Size, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pCfg2);
+            p[0] = 0xE9;
+            uintptr_t callNext = 0x4016C0 + 5;
+            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_AudioSampleConfig2) - callNext);
+            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
+            for (size_t i = 5; i < cfg2Size; ++i) p[i] = 0x90;
+            VirtualProtect(pCfg2, cfg2Size, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pCfg2, cfg2Size);
+        }
+
+        // Hook 8: Audio sample config 3 safety at 0x4016E0
+        void* pCfg3 = reinterpret_cast<void*>(0x4016E0);
+        const size_t cfg3Size = 17;
+        if (VirtualProtect(pCfg3, cfg3Size, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pCfg3);
+            p[0] = 0xE9;
+            uintptr_t callNext = 0x4016E0 + 5;
+            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_AudioSampleConfig3) - callNext);
+            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
+            for (size_t i = 5; i < cfg3Size; ++i) p[i] = 0x90;
+            VirtualProtect(pCfg3, cfg3Size, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pCfg3, cfg3Size);
+        }
+
+        // Hook 9: Audio sample config 4 safety at 0x401700
+        void* pCfg4 = reinterpret_cast<void*>(0x401700);
+        const size_t cfg4Size = 17;
+        if (VirtualProtect(pCfg4, cfg4Size, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            uint8_t* p = reinterpret_cast<uint8_t*>(pCfg4);
+            p[0] = 0xE9;
+            uintptr_t callNext = 0x401700 + 5;
+            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_AudioSampleConfig4) - callNext);
+            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
+            for (size_t i = 5; i < cfg4Size; ++i) p[i] = 0x90;
+            VirtualProtect(pCfg4, cfg4Size, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), pCfg4, cfg4Size);
         }
 
         s_installed = true;
