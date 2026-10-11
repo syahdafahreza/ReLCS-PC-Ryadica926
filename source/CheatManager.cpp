@@ -306,7 +306,7 @@ namespace ReLCS
         }
     }
 
-    static void DoPositionAndAddVehicle(void* pVeh, int modelId)
+    static void DoPositionAndAddVehicle(void* pVeh, int rawModelId)
     {
         const uintptr_t pPlayerInfo = 0x94AD28;
         uintptr_t pPed = *reinterpret_cast<uintptr_t*>(pPlayerInfo);
@@ -315,6 +315,9 @@ namespace ReLCS
             reinterpret_cast<void(__cdecl*)(void*)>(0x4DB3F0)(pVeh);
             return;
         }
+
+        // Determine actual modelId: if pVeh is valid, read m_nModelIndex at +0x5C, otherwise fallback to rawModelId
+        int modelId = (pVeh) ? *reinterpret_cast<int16_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x5C) : rawModelId;
 
         // 1. Read player position from CPlaceable at ped + 0x34..0x3C
         float px = *reinterpret_cast<float*>(pPed + 0x34);
@@ -387,34 +390,15 @@ namespace ReLCS
         *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x38) = spawn_y;
         *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pVeh) + 0x3C) = spawn_z;
 
-        // 7. Configure status flags (STATUS_PHYSICS = 0x18, matching script/ambient cars so door opening triggers) and unlocked doors
+        // 7. Configure status flags (STATUS_PLAYER = 0x20) and unlocked doors (matching 7be2059)
         uint8_t* pStatus = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x50);
-        *pStatus = (*pStatus & 7) | 0x18;
+        *pStatus = (*pStatus & 7) | 0x20;
 
         *reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x230) = 1; // Door lock = CARLOCK_UNLOCKED
-
-        // Configure engine cleanup flags so CCarCtrl::Prune deletes the vehicle when player moves far away:
-        // 0x1FA: Bit 1 (0x02) = cleanable / bCanBeDeleted
-        // Bit 4 (0x10) = bIsMissionCar (MUST be 0 so engine does not protect it permanently)
-        uint8_t* pFlags1FA = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FA);
-        *pFlags1FA = (*pFlags1FA | 0x02) & ~0x10;
-
-        // 0x1FB: Ensure standard damageability (NOT proof, can be damaged/dented/blown up normally)
-        uint8_t* pFlags1FB = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x1FB);
-        *pFlags1FB = (*pFlags1FB & ~0x1F) | 0x40;
 
         // 9. Add vehicle entity to CWorld at 0x4DB3F0
         typedef void(__cdecl* WorldAddFn_t)(void*);
         reinterpret_cast<WorldAddFn_t>(0x4DB3F0)(pVeh);
-
-        // 10. Sync RenderWare clump frame with world coordinates so doors/dummies match vehicle location
-        typedef void(__thiscall* UpdateRwFrameFn_t)(void*);
-        if (*reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(pVeh) + 0x4C) != 0)
-        {
-            reinterpret_cast<UpdateRwFrameFn_t>(0x4896C0)(pVeh);
-        }
-
-        CrashLogger::LogMessage("[CheatManager] Hook_PositionAndAddVehicle: positioned and added vehicle model " + std::to_string(modelId));
     }
 
     static void SafeFallbackAddVehicle(void* pVeh)
@@ -441,180 +425,6 @@ namespace ReLCS
         }
     }
 
-    __declspec(naked) static void Hook_SampleLookup()
-    {
-        __asm
-        {
-            // Verify sound bank pointer in ecx
-            cmp ecx, 0x10000
-            jb ret_zero_bank
-
-            // If sound bank data pointer [ecx+4] is NULL or invalid, return NULL safely
-            mov eax, [ecx + 4]
-            cmp eax, 0x10000
-            jb ret_zero_bank
-
-            push ebx
-            mov ebx, [esp + 8]
-            sub ebx, [ecx + 0x0C]
-            imul ebx, ebx, 0x3C
-            add ebx, eax
-            cmp ebx, 0x10000
-            jb ret_zero_sample
-
-            // Jump to 0x401022 to resume native engine execution
-            mov eax, 0x401022
-            jmp eax
-
-        ret_zero_sample:
-            pop ebx
-        ret_zero_bank:
-            xor eax, eax
-            ret 4
-        }
-    }
-
-    __declspec(naked) static void Hook_PlaySampleCheck()
-    {
-        __asm
-        {
-            // Verify sample pointer returned from 0x401010
-            cmp eax, 0x10000
-            jb ret_null
-
-            mov ebp, eax
-
-            // Check if pRwObject [esp + 0x0C] is a valid pointer
-            mov eax, [esp + 0x0C]
-            cmp eax, 0x10000
-            jb ret_null
-
-            // Dereference the plugin offset at address 0x978798
-            mov edx, 0x978798
-            mov edx, dword ptr [edx]
-            test edx, edx
-            js ret_null
-
-            add eax, edx
-            cmp eax, 0x10000
-            jb ret_null
-
-            xor edx, edx
-            mov ebx, [eax]
-            cmp ebx, 0x10000
-            jb ret_null
-
-            // Jump to 0x4058E0 to continue native engine execution
-            mov edx, 0x4058E0
-            jmp edx
-
-        ret_null:
-            xor eax, eax
-            pop ebp
-            pop ebx
-            ret
-        }
-    }
-
-    __declspec(naked) static void Hook_AudioSampleConfig1()
-    {
-        __asm
-        {
-            cmp ecx, 0x10000
-            jb ret_safe
-            mov dword ptr [ecx + 0x30], 1
-            mov eax, [esp + 4]
-            mov [ecx + 0x34], eax
-            mov eax, [esp + 8]
-            mov [ecx + 0x38], eax
-        ret_safe:
-            ret 8
-        }
-    }
-
-    __declspec(naked) static void Hook_AudioSampleConfig2()
-    {
-        __asm
-        {
-            cmp ecx, 0x10000
-            jb ret_safe
-            mov dword ptr [ecx + 0x30], 2
-            mov eax, [esp + 4]
-            mov [ecx + 0x34], eax
-            mov eax, [esp + 8]
-            mov [ecx + 0x38], eax
-        ret_safe:
-            ret 8
-        }
-    }
-
-    __declspec(naked) static void Hook_AudioSampleConfig3()
-    {
-        __asm
-        {
-            cmp ecx, 0x10000
-            jb ret_safe
-            fld dword ptr [esp + 4]
-            fstp dword ptr [ecx + 0x18]
-            fld dword ptr [esp + 8]
-            fstp dword ptr [ecx + 0x1C]
-        ret_safe:
-            ret 8
-        }
-    }
-
-    __declspec(naked) static void Hook_AudioSampleConfig4()
-    {
-        __asm
-        {
-            cmp ecx, 0x10000
-            jb ret_safe
-            or word ptr [ecx + 0x2E], 1
-            push dword ptr [esp + 4]
-            mov eax, 0x401770
-            call eax
-        ret_safe:
-            ret 4
-        }
-    }
-
-    __declspec(naked) static void Hook_RpClumpGetPlugin()
-    {
-        __asm
-        {
-            mov eax, [esp + 4]
-            cmp eax, 0x10000
-            jb ret_null
-            mov edx, 0x69A1D0
-            add eax, dword ptr [edx]
-            add eax, 4
-            mov eax, [eax]
-            ret
-
-        ret_null:
-            xor eax, eax
-            ret
-        }
-    }
-
-    __declspec(naked) static void Hook_RpClumpSetPlugin()
-    {
-        __asm
-        {
-            mov ecx, [esp + 4]
-            cmp ecx, 0x10000
-            jb ret_safe
-            mov eax, [esp + 8]
-            mov edx, 0x69A1D0
-            add ecx, dword ptr [edx]
-            add ecx, 4
-            mov [ecx], eax
-
-        ret_safe:
-            ret
-        }
-    }
-
     static void InstallVehicleSpawnHook()
     {
         static bool s_installed = false;
@@ -622,22 +432,12 @@ namespace ReLCS
 
         DWORD oldProtect = 0;
 
-        // Hook 1: Clamp parking space node index at 0x4AE9AC:
-        // Original: 0F 8C F0 00 00 00 (jl 0x4aeaa2 - 6 bytes)
-        // We replace with:
-        // 79 02          - jns +2 (if edi >= 0, skip)
-        // 31 FF          - xor edi, edi (if edi < 0, set edi = 0 so [edi + 0x9B6E60] never reads out-of-bounds)
-        // 90 90          - nop nop
+        // Hook 1: NOP the jl 0x4aeaa2 check at 0x4AE9AC (6 bytes: 0F 8C F0 00 00 00)
+        // This ensures the spawner never fails if parking space nodes are not found nearby.
         void* pCheckAddr = reinterpret_cast<void*>(0x4AE9AC);
         if (VirtualProtect(pCheckAddr, 6, PAGE_EXECUTE_READWRITE, &oldProtect))
         {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pCheckAddr);
-            p[0] = 0x79; // jns +2
-            p[1] = 0x02;
-            p[2] = 0x31; // xor edi, edi
-            p[3] = 0xFF;
-            p[4] = 0x90; // nop
-            p[5] = 0x90; // nop
+            memset(pCheckAddr, 0x90, 6);
             VirtualProtect(pCheckAddr, 6, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), pCheckAddr, 6);
         }
@@ -715,160 +515,15 @@ namespace ReLCS
             FlushInstructionCache(GetCurrentProcess(), pPosAddr, posPatchSize);
         }
 
-        // Hook 4: Audio sample bank safety check at 0x401010 to prevent crash when sound bank unloaded
-        void* pAudioAddr = reinterpret_cast<void*>(0x401010);
-        if (VirtualProtect(pAudioAddr, 5, PAGE_EXECUTE_READWRITE, &oldProtect))
-        {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pAudioAddr);
-            p[0] = 0xE9;
-            uintptr_t callNext = 0x401010 + 5;
-            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_SampleLookup) - callNext);
-            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
-            VirtualProtect(pAudioAddr, 5, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), pAudioAddr, 5);
-        }
-
-        // Hook 5: Audio sample playback safety check at 0x4058D0 to prevent null dereference at 0x4058E0
-        void* pPlayAddr = reinterpret_cast<void*>(0x4058D0);
-        const size_t playPatchSize = 16;
-        if (VirtualProtect(pPlayAddr, playPatchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
-        {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pPlayAddr);
-            p[0] = 0xE9;
-            uintptr_t callNext = 0x4058D0 + 5;
-            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_PlaySampleCheck) - callNext);
-            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
-            for (size_t i = 5; i < playPatchSize; ++i)
-            {
-                p[i] = 0x90;
-            }
-            VirtualProtect(pPlayAddr, playPatchSize, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), pPlayAddr, playPatchSize);
-        }
-
-        // Hook 6: Audio sample config 1 safety at 0x4016A0 (prevent crash on vehicle entry)
-        void* pCfg1 = reinterpret_cast<void*>(0x4016A0);
-        const size_t cfg1Size = 24;
-        if (VirtualProtect(pCfg1, cfg1Size, PAGE_EXECUTE_READWRITE, &oldProtect))
-        {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pCfg1);
-            p[0] = 0xE9;
-            uintptr_t callNext = 0x4016A0 + 5;
-            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_AudioSampleConfig1) - callNext);
-            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
-            for (size_t i = 5; i < cfg1Size; ++i) p[i] = 0x90;
-            VirtualProtect(pCfg1, cfg1Size, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), pCfg1, cfg1Size);
-        }
-
-        // Hook 7: Audio sample config 2 safety at 0x4016C0
-        void* pCfg2 = reinterpret_cast<void*>(0x4016C0);
-        const size_t cfg2Size = 24;
-        if (VirtualProtect(pCfg2, cfg2Size, PAGE_EXECUTE_READWRITE, &oldProtect))
-        {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pCfg2);
-            p[0] = 0xE9;
-            uintptr_t callNext = 0x4016C0 + 5;
-            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_AudioSampleConfig2) - callNext);
-            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
-            for (size_t i = 5; i < cfg2Size; ++i) p[i] = 0x90;
-            VirtualProtect(pCfg2, cfg2Size, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), pCfg2, cfg2Size);
-        }
-
-        // Hook 8: Audio sample config 3 safety at 0x4016E0
-        void* pCfg3 = reinterpret_cast<void*>(0x4016E0);
-        const size_t cfg3Size = 17;
-        if (VirtualProtect(pCfg3, cfg3Size, PAGE_EXECUTE_READWRITE, &oldProtect))
-        {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pCfg3);
-            p[0] = 0xE9;
-            uintptr_t callNext = 0x4016E0 + 5;
-            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_AudioSampleConfig3) - callNext);
-            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
-            for (size_t i = 5; i < cfg3Size; ++i) p[i] = 0x90;
-            VirtualProtect(pCfg3, cfg3Size, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), pCfg3, cfg3Size);
-        }
-
-        // Hook 9: Audio sample config 4 safety at 0x401700
-        void* pCfg4 = reinterpret_cast<void*>(0x401700);
-        const size_t cfg4Size = 17;
-        if (VirtualProtect(pCfg4, cfg4Size, PAGE_EXECUTE_READWRITE, &oldProtect))
-        {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pCfg4);
-            p[0] = 0xE9;
-            uintptr_t callNext = 0x401700 + 5;
-            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_AudioSampleConfig4) - callNext);
-            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
-            for (size_t i = 5; i < cfg4Size; ++i) p[i] = 0x90;
-            VirtualProtect(pCfg4, cfg4Size, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), pCfg4, cfg4Size);
-        }
-
-        // Hook 10: RpClumpGetPlugin safety check at 0x5814F0 to prevent crash at 0x5814FD on null clump
-        void* pClumpGet = reinterpret_cast<void*>(0x5814F0);
-        const size_t clumpGetSize = 16;
-        if (VirtualProtect(pClumpGet, clumpGetSize, PAGE_EXECUTE_READWRITE, &oldProtect))
-        {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pClumpGet);
-            p[0] = 0xE9;
-            uintptr_t callNext = 0x5814F0 + 5;
-            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_RpClumpGetPlugin) - callNext);
-            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
-            for (size_t i = 5; i < clumpGetSize; ++i) p[i] = 0x90;
-            VirtualProtect(pClumpGet, clumpGetSize, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), pClumpGet, clumpGetSize);
-        }
-
-        // Hook 11: RpClumpSetPlugin safety check at 0x581500 to prevent crash on null clump
-        void* pClumpSet = reinterpret_cast<void*>(0x581500);
-        const size_t clumpSetSize = 20;
-        if (VirtualProtect(pClumpSet, clumpSetSize, PAGE_EXECUTE_READWRITE, &oldProtect))
-        {
-            uint8_t* p = reinterpret_cast<uint8_t*>(pClumpSet);
-            p[0] = 0xE9;
-            uintptr_t callNext = 0x581500 + 5;
-            int32_t relOffset = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&Hook_RpClumpSetPlugin) - callNext);
-            *reinterpret_cast<int32_t*>(&p[1]) = relOffset;
-            for (size_t i = 5; i < clumpSetSize; ++i) p[i] = 0x90;
-            VirtualProtect(pClumpSet, clumpSetSize, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), pClumpSet, clumpSetSize);
-        }
-
         s_installed = true;
         CrashLogger::LogMessage("[CheatManager] Installed vehicle constructor & driver-facing position hooks (CLEO-iOS style).");
     }
 
     static void DoSpawnVehicle(int modelId)
     {
-        typedef void(__cdecl* RequestModelFn_t)(int, int);
-        RequestModelFn_t pfnRequestModel = reinterpret_cast<RequestModelFn_t>(0x40E310);
-        typedef void(__cdecl* LoadAllRequestedModelsFn_t)(bool);
-        LoadAllRequestedModelsFn_t pfnLoadModels = reinterpret_cast<LoadAllRequestedModelsFn_t>(0x40B5F0);
-
-        // 1. Request vehicle model and ensure it is fully loaded in memory before spawning
-        pfnRequestModel(modelId, 1);
-        for (int i = 0; i < 50; ++i)
-        {
-            uint8_t loadState = *reinterpret_cast<uint8_t*>(0x94DDD8 + modelId * 20);
-            if (loadState == 1) // LOADSTATE_LOADED
-                break;
-            pfnLoadModels(false);
-        }
-
-        uint8_t finalLoadState = *reinterpret_cast<uint8_t*>(0x94DDD8 + modelId * 20);
-        CrashLogger::LogMessage("[CheatManager] SafeSpawnVehicle: model " + std::to_string(modelId) + " loadState=" + std::to_string(finalLoadState));
-
-        // 2. Invoke spawner (our hooks ensure CBike/CBoat class ctor and player-facing positioning)
         typedef void(__cdecl* SpawnVehicleFn_t)(int);
         SpawnVehicleFn_t pfnSpawn = reinterpret_cast<SpawnVehicleFn_t>(0x4AE8F0);
         pfnSpawn(modelId);
-    }
-
-    static void LogSpawnException()
-    {
-        CrashLogger::LogMessage("[CheatManager] Exception in SafeSpawnVehicle!");
     }
 
     static void SafeSpawnVehicle(int modelId)
@@ -878,10 +533,7 @@ namespace ReLCS
         {
             DoSpawnVehicle(modelId);
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            LogSpawnException();
-        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 
     static void SafeAddMoneyAndRestore(uintptr_t pPlayerInfo, int amount)
